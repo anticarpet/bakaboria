@@ -27,11 +27,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // If no search query is provided, return all documents.
-    // Otherwise, perform an OR query matching name OR tags.
-    const query = conditions.length > 0 ? { $or: conditions } : {};
-    console.log(query);
-    console.log(conditions);
+    // If no search query is provided, return an empty array instead of retrieving all documents.
+    if (conditions.length === 0) {
+      return NextResponse.json([], { status: 200 });
+    }
+    const query = { $or: conditions };
 
     const documents = await DocumentModel.find(query)
       .select("-password") // Do not expose the password

@@ -1,7 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useSession, signOut } from "next-auth/react";
+
+import Image from "next/image";
 
 type UploadMode = "PDF" | "DRIVE";
 
@@ -26,8 +29,13 @@ function validateDriveUrl(url: string): string {
   return ""; // valid
 }
 
+
+
 export default function UploadDocPage() {
-  const [uploadMode, setUploadMode] = useState<UploadMode>("PDF");
+  const { data: session, status: sessionStatus } = useSession();
+  const [uploadMode, setUploadMode] = useState<UploadMode>("DRIVE");
+  const [isPdfHovered, setIsPdfHovered] = useState<boolean>(false);
+  const [isDriveHovered, setIsDriveHovered] = useState(false);
 
   // Shared fields
   const [uid, setUid] = useState("");
@@ -46,6 +54,13 @@ export default function UploadDocPage() {
 
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Auto-fill uid from authenticated session
+  useEffect(() => {
+    if (session?.user && (session.user as any).id) {
+      setUid((session.user as any).id);
+    }
+  }, [session]);
 
   // Live parse tags
   useEffect(() => {
@@ -156,8 +171,64 @@ export default function UploadDocPage() {
     }
   };
 
+
+
+
+
+
+
+
+
+  // Loading state while session is being fetched
+  if (sessionStatus === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <svg className="animate-spin h-8 w-8 text-black" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-white text-slate-900 flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="min-h-screen bg-white text-slate-900 flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
+
+      {/* ── Session header ── */}
+      {session?.user && (
+        <div className="w-full max-w-2xl flex items-center justify-between mb-6 px-1">
+          <div className="flex items-center gap-3">
+            {session.user.image ? (
+              <Image
+                src={session.user.image}
+                alt={session.user.name ?? "User"}
+                width={36}
+                height={36}
+                className="rounded-full border border-black/10"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-black flex items-center justify-center text-white text-sm font-semibold">
+                {session.user.name?.[0] ?? "U"}
+              </div>
+            )}
+            <div>
+              <p className="text-sm font-semibold text-black leading-none">{session.user.name}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{session.user.email}</p>
+            </div>
+          </div>
+          <button
+            id="sign-out-btn"
+            onClick={() => signOut({ callbackUrl: "/signIn" })}
+            className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-black border border-slate-200 hover:border-black rounded-lg px-3 py-1.5 transition-all"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            Sign out
+          </button>
+        </div>
+      )}
+
       <div className="max-w-2xl w-full space-y-8 z-10">
 
         {/* Form Container */}
@@ -174,6 +245,9 @@ export default function UploadDocPage() {
               <div>
                 <label htmlFor="uid" className="block text-sm font-semibold text-black">
                   User ID (UID)
+                  {session?.user && (
+                    <span className="ml-2 text-xs font-normal text-emerald-600">✓ auto-filled</span>
+                  )}
                 </label>
                 <input
                   type="text"
@@ -181,8 +255,13 @@ export default function UploadDocPage() {
                   required
                   placeholder="e.g. 612983912391273"
                   value={uid}
+                  readOnly={!!session?.user}
                   onChange={(e) => setUid(e.target.value)}
-                  className="mt-1.5 block w-full rounded-lg bg-white border border-slate-800 px-4 py-2.5 text-black placeholder-slate-500 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
+                  className={`mt-1.5 block w-full rounded-lg border px-4 py-2.5 text-black placeholder-slate-500 focus:outline-none focus:ring-2 transition-all text-sm ${
+                    session?.user
+                      ? "bg-slate-50 border-slate-300 text-slate-600 cursor-not-allowed focus:ring-0"
+                      : "bg-white border-slate-800 focus:border-black focus:ring-black/10"
+                  }`}
                 />
               </div>
               <div>
@@ -253,21 +332,25 @@ export default function UploadDocPage() {
               <div className="flex rounded-lg border border-black overflow-hidden w-fit">
                 <button
                   type="button"
-                  onClick={() => setUploadMode("PDF")}
+                  
+                  onClick={() => setUploadMode("DRIVE")}
+                  onMouseEnter={() => setIsPdfHovered(true)}
+                  onMouseLeave={() => setIsPdfHovered(false)}
                   className={`flex items-center gap-2 px-5 py-2 text-sm font-semibold transition-all cursor-pointer ${
                     uploadMode === "PDF"
                       ? "bg-black text-white"
                       : "bg-white text-black hover:bg-slate-100"
                   }`}
-                >
+                > {isPdfHovered? "PDF ( temporarily disabled) " : "PDF" }
                   {/* Page icon */}
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  PDF
+                 
                 </button>
                 <button
                   type="button"
+                  
                   onClick={() => setUploadMode("DRIVE")}
                   className={`flex items-center gap-2 px-5 py-2 text-sm font-semibold transition-all cursor-pointer border-l border-black ${
                     uploadMode === "DRIVE"

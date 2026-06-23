@@ -1,13 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  images: {
+    remotePatterns: [
+      {
+        // Google profile pictures (lh3.googleusercontent.com)
+        protocol: "https",
+        hostname: "**.googleusercontent.com",
+      },
+    ],
+  },
 };
 
 module.exports = {
- devIndicators: false,
-}
+  devIndicators: false,
+  images: nextConfig.images,
+};
 
 export default nextConfig;
-
-
