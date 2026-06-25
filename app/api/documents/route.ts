@@ -27,15 +27,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // If no search query is provided, return an empty array instead of retrieving all documents.
-    if (conditions.length === 0) {
-      return NextResponse.json([], { status: 200 });
-    }
-    const query = { $or: conditions };
+    let rawDocs: any[];
 
-    const documents = await DocumentModel.find(query)
-      .select("-password") // Do not expose the password
-      .sort({ createdAt: -1 });
+    if (conditions.length === 0) {
+      // No filters: return the 20 most recent documents of any type
+      rawDocs = await DocumentModel.find({})
+        .lean()
+        .sort({ createdAt: -1 })
+        .limit(20);
+    } else {
+      rawDocs = await DocumentModel.find({ $or: conditions })
+        .lean()
+        .sort({ createdAt: -1 });
+    }
+
+    // Strip password but expose hasPassword flag
+    const documents = rawDocs.map(({ password, ...rest }) => ({
+      ...rest,
+      hasPassword: !!password,
+    }));
 
     return NextResponse.json(documents, { status: 200 });
   } catch (error: any) {

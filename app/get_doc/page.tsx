@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 interface DocumentItem {
   _id: string;
@@ -15,6 +16,7 @@ interface DocumentItem {
   createdAt: string;
   verified: boolean;
   storeMethod: "PDF" | "DRIVE";
+  hasPassword: boolean;
 }
 
 export default function GetDocPage() {
@@ -22,16 +24,20 @@ export default function GetDocPage() {
   const [tagsSearch, setTagsSearch] = useState("");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isDefaultView, setIsDefaultView] = useState(true);
   const [passwords, setPasswords] = useState<{ [key: string]: string }>({});
   const [downloading, setDownloading] = useState<{ [key: string]: boolean }>({});
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = async (name = nameSearch, tags = tagsSearch) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (nameSearch.trim()) params.append("name", nameSearch.trim());
-      if (tagsSearch.trim()) params.append("tags", tagsSearch.trim());
+      if (name.trim()) params.append("name", name.trim());
+      if (tags.trim()) params.append("tags", tags.trim());
+
+      const hasFilters = name.trim() || tags.trim();
+      setIsDefaultView(!hasFilters);
 
       const res = await fetch(`/api/documents?${params.toString()}`);
       if (res.ok) {
@@ -48,7 +54,7 @@ export default function GetDocPage() {
   };
 
   useEffect(() => {
-    fetchDocuments();
+    fetchDocuments("", "");
   }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -119,7 +125,7 @@ export default function GetDocPage() {
   };
 
   const formatSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes";
+    if (!bytes || bytes === 0) return "—";
     const k = 1024;
     const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -127,8 +133,41 @@ export default function GetDocPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 flex flex-col py-12 px-4 sm:px-6 lg:px-8 font-sans">
-      <div className="max-w-6xl w-full mx-auto space-y-8 flex-1 flex flex-col">
+    <div className="relative min-h-screen bg-white text-slate-900 flex flex-col py-12 px-4 sm:px-6 lg:px-8 font-sans overflow-hidden">
+
+      {/* ── Logo watermark ── */}
+      {/* PC: wide crop, left-anchored */}
+      <div
+        className="pointer-events-none select-none fixed bottom-0 left-0 hidden sm:block"
+        style={{ opacity: 0.065, zIndex: 0 }}
+        aria-hidden="true"
+      >
+        <Image
+          src="/logo.png"
+          alt=""
+          width={1360}
+          height={1120}
+          style={{ objectFit: "contain", objectPosition: "left bottom" }}
+          priority
+        />
+      </div>
+      {/* Mobile: smaller, bottom-left */}
+      <div
+        className="pointer-events-none select-none fixed bottom-0 left-0 block sm:hidden"
+        style={{ opacity: 0.065, zIndex: 0 }}
+        aria-hidden="true"
+      >
+        <Image
+          src="/logo.png"
+          alt=""
+          width={560}
+          height={560}
+          style={{ objectFit: "contain", objectPosition: "left bottom" }}
+          priority
+        />
+      </div>
+
+      <div className="relative z-10 max-w-6xl w-full mx-auto space-y-8 flex-1 flex flex-col">
 
         {/* Header */}
         <div className="flex justify-between items-center">
@@ -138,7 +177,6 @@ export default function GetDocPage() {
           >
             ← Upload Document
           </Link>
-          
         </div>
 
         {/* Dashboard Layout */}
@@ -211,7 +249,7 @@ export default function GetDocPage() {
                     onClick={() => {
                       setNameSearch("");
                       setTagsSearch("");
-                      setTimeout(() => fetchDocuments(), 0);
+                      fetchDocuments("", "");
                     }}
                     className="w-full text-center text-xs text-slate-500 hover:text-black transition-colors py-2 block underline"
                   >
@@ -226,10 +264,10 @@ export default function GetDocPage() {
           <div className="lg:col-span-7 flex flex-col space-y-4">
             <div className="flex justify-between items-center px-1">
               <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">
-                Results
+                {isDefaultView ? "Recent PDFs" : "Results"}
               </h2>
               <span className="text-xs text-slate-400 font-medium">
-                {documents.length} {documents.length === 1 ? "document" : "documents"} found
+                {documents.length} {documents.length === 1 ? "document" : "documents"}{isDefaultView ? " shown" : " found"}
               </span>
             </div>
 
@@ -279,22 +317,20 @@ export default function GetDocPage() {
                                   title="Stored on Google Drive"
                                   className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-black border border-black shrink-0"
                                 >
-                                  {/* Cloud icon */}
                                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="black" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
                                   </svg>
-                                  
+                                  Drive
                                 </span>
                               ) : (
                                 <span
-                                  title="Stored locally"
+                                  title="Stored as PDF"
                                   className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-50 text-black border border-black shrink-0"
                                 >
-                                  {/* Page icon */}
                                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="black" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                   </svg>
-                                  
+                                  PDF
                                 </span>
                               )}
 
@@ -308,6 +344,19 @@ export default function GetDocPage() {
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                   </svg>
                                   Verified
+                                </span>
+                              )}
+
+                              {/* Password lock indicator */}
+                              {doc.hasPassword && (
+                                <span
+                                  title="Password protected"
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-black border border-amber-400 shrink-0"
+                                >
+                                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="black" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                  </svg>
+                                  Protected
                                 </span>
                               )}
                             </div>
@@ -327,48 +376,77 @@ export default function GetDocPage() {
                           </span>
                         </div>
 
-                        {/* Password input and Download button */}
+                        {/* Bottom action row */}
                         <div className="pt-3 border-t border-black/10 flex flex-col sm:flex-row sm:items-center justify-end gap-3">
-                          <div className="flex items-center gap-2 w-full sm:max-w-xs">
-                            <label className="text-xs font-semibold text-slate-500 shrink-0">
-                              password:
-                            </label>
-                            <input
-                              type="password"
-                              placeholder="Enter password..."
-                              value={passwords[doc._id] || ""}
-                              onChange={(e) => handlePasswordChange(doc._id, e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" && !isDownloading) {
-                                  handleDownload(doc);
-                                }
-                              }}
-                              className="block w-full rounded-lg bg-white border border-slate-800 px-3 py-1.5 text-black placeholder-slate-400 focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10 text-xs transition-all"
-                            />
-                          </div>
+                          {doc.hasPassword ? (
+                            /* Password-protected: show input + download */
+                            <>
+                              <div className="flex items-center gap-2 w-full sm:max-w-xs">
+                                <label className="text-xs font-semibold text-slate-500 shrink-0">
+                                  password:
+                                </label>
+                                <input
+                                  type="password"
+                                  placeholder="Enter password..."
+                                  value={passwords[doc._id] || ""}
+                                  onChange={(e) => handlePasswordChange(doc._id, e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !isDownloading) {
+                                      handleDownload(doc);
+                                    }
+                                  }}
+                                  className="block w-full rounded-lg bg-white border border-slate-800 px-3 py-1.5 text-black placeholder-slate-400 focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10 text-xs transition-all"
+                                />
+                              </div>
 
-                          <button
-                            onClick={() => handleDownload(doc)}
-                            disabled={isDownloading}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-black hover:bg-slate-700 text-white font-semibold text-xs px-4 py-2 shadow transition-all duration-200 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
-                          >
-                            {isDownloading ? (
-                              <>
-                                <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Downloading...
-                              </>
-                            ) : (
-                              <>
-                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg>
-                                Download
-                              </>
-                            )}
-                          </button>
+                              <button
+                                onClick={() => handleDownload(doc)}
+                                disabled={isDownloading}
+                                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-black hover:bg-slate-700 text-white font-semibold text-xs px-4 py-2 shadow transition-all duration-200 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
+                              >
+                                {isDownloading ? (
+                                  <>
+                                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Downloading...
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    Download
+                                  </>
+                                )}
+                              </button>
+                            </>
+                          ) : (
+                            /* No password: single prominent Get Document button */
+                            <button
+                              onClick={() => handleDownload(doc)}
+                              disabled={isDownloading}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-black hover:bg-slate-700 text-white font-semibold text-sm px-5 py-2.5 shadow-md transition-all duration-200 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0 tracking-wide"
+                            >
+                              {isDownloading ? (
+                                <>
+                                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                  Downloading...
+                                </>
+                              ) : (
+                                <>
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                  </svg>
+                                  Get Document
+                                </>
+                              )}
+                            </button>
+                          )}
                         </div>
 
                         {/* Error message */}

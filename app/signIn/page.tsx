@@ -3,6 +3,7 @@
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import Image from "next/image";
 
 function SignInContent() {
   const searchParams = useSearchParams();
@@ -47,9 +48,36 @@ function SignInContent() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white px-4">
-      {/* Subtle grid background */}
-     
+    <div className="relative min-h-screen flex items-center justify-center bg-white px-4 overflow-hidden">
+      {/* ── Logo watermark ── */}
+      <div
+        className="pointer-events-none select-none fixed bottom-0 left-0 hidden sm:block"
+        style={{ opacity: 0.065, zIndex: 0 }}
+        aria-hidden="true"
+      >
+        <Image
+          src="/logo.png"
+          alt=""
+          width={1360}
+          height={1120}
+          style={{ objectFit: "contain", objectPosition: "left bottom" }}
+          priority
+        />
+      </div>
+      <div
+        className="pointer-events-none select-none fixed bottom-0 left-0 block sm:hidden"
+        style={{ opacity: 0.065, zIndex: 0 }}
+        aria-hidden="true"
+      >
+        <Image
+          src="/logo.png"
+          alt=""
+          width={560}
+          height={560}
+          style={{ objectFit: "contain", objectPosition: "left bottom" }}
+          priority
+        />
+      </div>
 
       <div className="relative z-10 w-full max-w-md">
         {/* Card */}

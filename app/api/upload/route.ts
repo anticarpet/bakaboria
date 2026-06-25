@@ -63,6 +63,25 @@ export async function POST(request: NextRequest) {
       // Normalise to a canonical share URL
       const canonicalUrl = `https://drive.google.com/file/d/${fileId}/view`;
 
+      // Try to get the actual file size via a HEAD request to the download endpoint
+      let driveFileSize = 0;
+      try {
+        const headRes = await fetch(
+          `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0&confirm=t`,
+          {
+            method: "HEAD",
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+            },
+          }
+        );
+        const contentLength = headRes.headers.get("content-length");
+        if (contentLength) driveFileSize = parseInt(contentLength, 10);
+      } catch {
+        // Silently fall back to 0 if size cannot be determined
+      }
+
       const newDoc = new DocumentModel({
         uid,
         name,
@@ -70,7 +89,7 @@ export async function POST(request: NextRequest) {
         tags: parsedTags,
         fileLocation: canonicalUrl,
         fileName: `${name}.pdf`,
-        fileSize: 0,
+        fileSize: driveFileSize,
         mimeType: "application/pdf",
         storeMethod: "DRIVE",
       });

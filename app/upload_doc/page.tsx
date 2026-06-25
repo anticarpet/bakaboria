@@ -192,7 +192,39 @@ export default function UploadDocPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="relative min-h-screen bg-white text-slate-900 flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8 font-sans overflow-hidden">
+
+      {/* ── Logo watermark ── */}
+      {/* PC: wide crop, left-anchored */}
+      <div
+        className="pointer-events-none select-none fixed bottom-0 left-0 hidden sm:block"
+        style={{ opacity: 0.065, zIndex: 0 }}
+        aria-hidden="true"
+      >
+        <Image
+          src="/logo.png"
+          alt=""
+          width={1360}
+          height={1120}
+          style={{ objectFit: "contain", objectPosition: "left bottom" }}
+          priority
+        />
+      </div>
+      {/* Mobile: smaller, bottom-left */}
+      <div
+        className="pointer-events-none select-none fixed bottom-0 left-0 block sm:hidden"
+        style={{ opacity: 0.065, zIndex: 0 }}
+        aria-hidden="true"
+      >
+        <Image
+          src="/logo.png"
+          alt=""
+          width={560}
+          height={560}
+          style={{ objectFit: "contain", objectPosition: "left bottom" }}
+          priority
+        />
+      </div>
 
       {/* ── Session header ── */}
       {session?.user && (
@@ -229,7 +261,7 @@ export default function UploadDocPage() {
         </div>
       )}
 
-      <div className="max-w-2xl w-full space-y-8 z-10">
+      <div className="relative max-w-2xl w-full space-y-8 z-10">
 
         {/* Form Container */}
         <div className="bg-white border border-3 border-black rounded-xl p-8 sm:p-10 shadow-sm space-y-6">
