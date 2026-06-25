@@ -6,9 +6,12 @@ export function Hallo({ strin }: { strin: string }) {
   );
 }
 
+export const dynamic = 'force-dynamic';
+
 export default async function Page() {
   if (mongoose.connection.readyState === 0) {
-    await mongoose.connect('mongodb://127.0.0.1:27017/school');
+    const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/school';
+    await mongoose.connect(uri);
   }
 
   const studentSchema = new mongoose.Schema({
