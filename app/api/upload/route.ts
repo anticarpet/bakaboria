@@ -29,6 +29,11 @@ export async function POST(request: NextRequest) {
     const tagsInput = (formData.get("tags") as string) || "";
     const storeMethod = (formData.get("storeMethod") as string) || "PDF";
 
+    const primaryTagsInput = (formData.get("primaryTags") as string) || "";
+    const propertyTagsInput = (formData.get("propertyTags") as string) || "";
+    const hiddenInput = (formData.get("hidden") as string) || "false";
+    const hiddenTagsInput = (formData.get("hiddenTags") as string) || "";
+
     if (!uid || !name) {
       return NextResponse.json(
         { error: "UID and Document Name are required." },
@@ -38,6 +43,23 @@ export async function POST(request: NextRequest) {
 
     // Process Tags: e.g. "#physics #CUFE" -> ["physics", "cufe"]
     const parsedTags = tagsInput
+      .split("#")
+      .map((tag) => tag.trim().toLowerCase())
+      .filter((tag) => tag.length > 0);
+
+    const parsedPrimaryTags = primaryTagsInput
+      .split("#")
+      .map((tag) => tag.trim().toLowerCase())
+      .filter((tag) => tag.length > 0);
+
+    const parsedPropertyTags = propertyTagsInput
+      .split("#")
+      .map((tag) => tag.trim().toLowerCase())
+      .filter((tag) => tag.length > 0);
+
+    const hidden = hiddenInput === "true";
+
+    const parsedHiddenTags = hiddenTagsInput
       .split("#")
       .map((tag) => tag.trim().toLowerCase())
       .filter((tag) => tag.length > 0);
@@ -87,6 +109,10 @@ export async function POST(request: NextRequest) {
         name,
         password,
         tags: parsedTags,
+        primaryTags: parsedPrimaryTags,
+        propertyTags: parsedPropertyTags,
+        hidden,
+        hiddenTags: parsedHiddenTags,
         fileLocation: canonicalUrl,
         fileName: `${name}.pdf`,
         fileSize: driveFileSize,
@@ -138,6 +164,10 @@ export async function POST(request: NextRequest) {
       name,
       password,
       tags: parsedTags,
+      primaryTags: parsedPrimaryTags,
+      propertyTags: parsedPropertyTags,
+      hidden,
+      hiddenTags: parsedHiddenTags,
       fileLocation: relativePath,
       fileName: documentFile.name,
       fileSize: documentFile.size,

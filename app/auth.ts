@@ -106,6 +106,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           const dbUser = await userModel.findOne({ email: token.email });
           if (dbUser) {
             token.mongoId = dbUser._id.toString();
+            token.role = dbUser.role;
           }
         } catch (err) {
           console.error("jwt callback – DB error:", err);
@@ -120,6 +121,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async session({ session, token }) {
       if (session.user && token.mongoId) {
         (session.user as any).id = token.mongoId as string;
+        try {
+          await connectDB();
+          const dbUser = await userModel.findById(token.mongoId);
+          (session.user as any).role = dbUser?.role || "user";
+        } catch (err) {
+          console.error("session callback – DB error:", err);
+          (session.user as any).role = (token.role as string) || "user";
+        }
       }
       return session;
     },

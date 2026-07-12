@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useSession } from "next-auth/react";
 
 interface DocumentItem {
   _id: string;
@@ -17,9 +18,14 @@ interface DocumentItem {
   verified: boolean;
   storeMethod: "PDF" | "DRIVE";
   hasPassword: boolean;
+  processed: boolean;
+  reviewed: boolean;
+  // are the rest of the tags missing?
 }
 
 export default function GetDocPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
   const [nameSearch, setNameSearch] = useState("");
   const [tagsSearch, setTagsSearch] = useState("");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -307,9 +313,16 @@ export default function GetDocPage() {
                         <div className="flex justify-between items-start gap-4">
                           <div className="space-y-1.5 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="text-base sm:text-lg font-bold text-black leading-tight">
-                                {doc.name}
-                              </h3>
+                              <div className="min-w-0">
+                                <h3 className="text-base sm:text-lg font-bold text-black leading-tight">
+                                  {doc.name}
+                                </h3>
+                                {isAdmin && (
+                                  <p className="text-xs text-slate-400 font-mono break-all mt-0.5">
+                                    {doc._id}
+                                  </p>
+                                )}
+                              </div>
 
                               {/* Storage-type badge */}
                               {doc.storeMethod === "DRIVE" ? (
@@ -357,6 +370,33 @@ export default function GetDocPage() {
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                   </svg>
                                   Protected
+                                </span>
+                              )}
+
+                              {/* Processed badge — grey Gemini sparkle icon */}
+                              {doc.processed && (
+                                <span
+                                  title="Processed by Gemini"
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-300 shrink-0"
+                                >
+                                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none">
+                                    <path d="M12 2L14.09 8.26L20 9.27L15.55 13.97L16.91 20L12 16.9L7.09 20L8.45 13.97L4 9.27L9.91 8.26L12 2Z" fill="#94a3b8" />
+                                    <path d="M12 6L13.09 9.26L16 9.77L13.78 12.17L14.45 15.5L12 13.9L9.55 15.5L10.22 12.17L8 9.77L10.91 9.26L12 6Z" fill="#cbd5e1" />
+                                  </svg>
+                                  Processed
+                                </span>
+                              )}
+
+                              {/* Reviewed badge — grey thumbs-up icon */}
+                              {doc.reviewed && (
+                                <span
+                                  title="Reviewed"
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-300 shrink-0"
+                                >
+                                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
+                                  </svg>
+                                  Reviewed
                                 </span>
                               )}
                             </div>

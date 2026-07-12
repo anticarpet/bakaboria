@@ -52,6 +52,16 @@ export default function UploadDocPage() {
   const [driveUrl, setDriveUrl] = useState("");
   const [driveUrlError, setDriveUrlError] = useState("");
 
+  // Advanced options
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [primaryTagsInput, setPrimaryTagsInput] = useState("");
+  const [parsedPrimaryTags, setParsedPrimaryTags] = useState<string[]>([]);
+  const [propertyTagsInput, setPropertyTagsInput] = useState("");
+  const [parsedPropertyTags, setParsedPropertyTags] = useState<string[]>([]);
+  const [hidden, setHidden] = useState(false);
+  const [hiddenTagsInput, setHiddenTagsInput] = useState("");
+  const [parsedHiddenTags, setParsedHiddenTags] = useState<string[]>([]);
+
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -70,6 +80,33 @@ export default function UploadDocPage() {
       .filter((tag) => tag.length > 0);
     setParsedTags(tags);
   }, [tagsInput]);
+
+  // Live parse primary tags
+  useEffect(() => {
+    const tags = primaryTagsInput
+      .split("#")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    setParsedPrimaryTags(tags);
+  }, [primaryTagsInput]);
+
+  // Live parse property tags
+  useEffect(() => {
+    const tags = propertyTagsInput
+      .split("#")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    setParsedPropertyTags(tags);
+  }, [propertyTagsInput]);
+
+  // Live parse hidden tags
+  useEffect(() => {
+    const tags = hiddenTagsInput
+      .split("#")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    setParsedHiddenTags(tags);
+  }, [hiddenTagsInput]);
 
   // Validate drive URL live
   useEffect(() => {
@@ -105,6 +142,11 @@ export default function UploadDocPage() {
     setFile(null);
     setDriveUrl("");
     setDriveUrlError("");
+    setPrimaryTagsInput("");
+    setPropertyTagsInput("");
+    setHidden(false);
+    setHiddenTagsInput("");
+    setShowAdvanced(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -143,6 +185,18 @@ export default function UploadDocPage() {
       formData.append("password", password);
       formData.append("tags", tagsInput);
       formData.append("storeMethod", uploadMode);
+
+      if (showAdvanced) {
+        formData.append("primaryTags", primaryTagsInput);
+        formData.append("propertyTags", propertyTagsInput);
+        formData.append("hidden", String(hidden));
+        formData.append("hiddenTags", hiddenTagsInput);
+      } else {
+        formData.append("primaryTags", "");
+        formData.append("propertyTags", "");
+        formData.append("hidden", "false");
+        formData.append("hiddenTags", "");
+      }
 
       if (uploadMode === "PDF" && file) {
         formData.append("document", file);
@@ -355,6 +409,136 @@ export default function UploadDocPage() {
                 </div>
               )}
             </div>
+
+            {/* Advanced Options Toggle */}
+            <div className="flex items-center justify-between border-t border-black/15 pt-5">
+              <div className="flex flex-col">
+                <span className="text-sm font-bold text-black">Advanced Options</span>
+                <span className="text-xs text-slate-500">Configure secondary categorization and visibility settings.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 ${
+                  showAdvanced ? "bg-black" : "bg-slate-200"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    showAdvanced ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {showAdvanced && (
+              <div className="space-y-5 border-t border-black/15 pt-5 animate-fadeIn">
+                {/* Primary Tags */}
+                <div>
+                  <label htmlFor="primaryTags" className="block text-sm font-semibold text-black">
+                    Primary Tags <span className="text-xs text-slate-500 font-normal">(Separated by hashtags)</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="primaryTags"
+                    placeholder="e.g. #physics #math"
+                    value={primaryTagsInput}
+                    onChange={(e) => setPrimaryTagsInput(e.target.value)}
+                    className="mt-1.5 block w-full rounded-lg bg-white border border-slate-800 px-4 py-2.5 text-black placeholder-slate-500 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
+                  />
+                  {parsedPrimaryTags.length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap gap-2">
+                      {parsedPrimaryTags.map((tag, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-black border border-black/20"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Property Tags */}
+                <div>
+                  <label htmlFor="propertyTags" className="block text-sm font-semibold text-black">
+                    Property Tags <span className="text-xs text-slate-500 font-normal">(Separated by hashtags)</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="propertyTags"
+                    placeholder="e.g. #final #midterm"
+                    value={propertyTagsInput}
+                    onChange={(e) => setPropertyTagsInput(e.target.value)}
+                    className="mt-1.5 block w-full rounded-lg bg-white border border-slate-800 px-4 py-2.5 text-black placeholder-slate-500 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
+                  />
+                  {parsedPropertyTags.length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap gap-2">
+                      {parsedPropertyTags.map((tag, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-black border border-black/20"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Hidden Switch */}
+                <div className="flex items-center justify-between border-t border-black/10 pt-4">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-black">Hidden Document</span>
+                    <span className="text-xs text-slate-500">Hide from search results unless hidden tags are matched.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHidden(!hidden)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 ${
+                      hidden ? "bg-black" : "bg-slate-200"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        hidden ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Hidden Tags */}
+                {hidden && (
+                  <div className="space-y-1.5 border-t border-black/10 pt-4 animate-fadeIn">
+                    <label htmlFor="hiddenTags" className="block text-sm font-semibold text-black">
+                      Hidden Tags <span className="text-xs text-slate-500 font-normal">(Separated by hashtags)</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="hiddenTags"
+                      placeholder="e.g. #secret #internal"
+                      value={hiddenTagsInput}
+                      onChange={(e) => setHiddenTagsInput(e.target.value)}
+                      className="mt-1.5 block w-full rounded-lg bg-white border border-slate-800 px-4 py-2.5 text-black placeholder-slate-500 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
+                    />
+                    {parsedHiddenTags.length > 0 && (
+                      <div className="mt-2.5 flex flex-wrap gap-2">
+                        {parsedHiddenTags.map((tag, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-black border border-black/20"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
 
             {/* ── Upload Mode Toggle ── */}
             <div>

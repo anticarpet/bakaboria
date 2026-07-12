@@ -1,0 +1,71 @@
+# Project VibeSummary: Bakaboria
+
+Bakaboria is a Next.js application that integrates MongoDB (Mongoose) and Gemini 2.5 Flash (`@google/genai` API) to upload, search, process, and download document PDFs (stored locally or proxy-downloaded from Google Drive).
+
+---
+
+## 🛠️ Technology Stack
+*   **Framework**: Next.js 15+ (App Router)
+*   **Language**: TypeScript
+*   **Database**: MongoDB via Mongoose
+*   **Authentication**: NextAuth (Google OAuth + Credentials flow with plaintext passwords)
+*   **Styling**: TailwindCSS
+*   **AI Integration**: Google GenAI SDK (`@google/genai`), using `gemini-2.5-flash`
+
+---
+
+## 📂 Codebase Structure & Key Files
+
+### 🛡️ Routing & Auth Middleware
+*   **[middleware.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/middleware.ts)**: Intercepts requests on Edge runtime. Protects `/upload_doc` and `/get_doc`, redirecting unauthenticated users to `/signIn`.
+*   **[app/auth.config.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/auth.config.ts)**: Configures the Google OAuth provider and basic authorized check callback.
+*   **[app/auth.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/auth.ts)**: Implements NextAuth with both Google OAuth and a custom Credentials provider. It upserts users into MongoDB on sign-in, links their Mongo `_id` to the session JWT, and implements registration of new users when checking credentials.
+
+### 💾 Database Connection & Models (`models/`)
+*   **[lib/db.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/lib/db.ts)**: Connects to MongoDB (uses `MONGODB_URI` from `.env.local` or defaults to `mongodb://127.0.0.1:27017/school`).
+*   **[models/users.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/models/users.ts)**: Defines `userSchema` / `userModel`. Stores `uid` (string), `username`, `email`, `password` (plaintext, optional), `image` (Google avatar, optional), and `role` (default: "user").
+*   **[models/Document.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/models/Document.ts)**: Defines the `DocumentSchema` / `DocumentModel` for uploaded files. Fields:
+    *   `uid`: Owner user ID
+    *   `name`: Document title
+    *   `password`: (Optional) Access password
+    *   `tags`: Base tags (e.g. subject, department)
+    *   `primaryTags`, `propertyTags`: Categorization tags
+    *   `hidden`: Boolean visibility flag
+    *   `hiddenTags`: Tags that unlock access to hidden documents
+    *   `processed`, `reviewed`: Gemini analysis status flags
+    *   `fileLocation`: Drive URL or local path
+    *   `fileName`, `fileSize`, `mimeType`, `verified`
+    *   `storeMethod`: `"PDF"` (local storage under `docus/`) or `"DRIVE"` (Google Drive)
+*   **[models/GeminiResult.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/models/GeminiResult.ts)**: Defines `GeminiResultSchema` mapping `_id` (1:1 with Document `_id`) to a parsed JSON `result` object containing exam structural metrics.
+*   **[models/Hierarchy.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/models/Hierarchy.ts)**: Defines `HierarchySchema` / `HierarchyModel` to map parent/child node relationships. Fields include `Name` (string), `tag_Name` (unique string), `parents` array (with `p-name` and `p-id`), and `children` array (matching parent structure).
+
+### 🧠 Gemini Integration (`lib/gemini.ts`)
+*   **[lib/gemini.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/lib/gemini.ts)**: Contains the core Gemini logic:
+    1.  Downloads/retrieves the PDF file (either locally from `docus/` or proxied from Google Drive via direct download link).
+    2.  Sends the base64-encoded PDF to `gemini-2.5-flash` with a custom prompt (`PROMPT`) instructing it to extract structural features: exam length, total marks, section types, cognitive distribution (recall vs. calculation vs. design/troubleshoot), topic weighting, scenarios blacklist, and a high-fidelity list of all questions (`exam_content`).
+    3.  Enforces a strict structured output schema (`RESPONSE_SCHEMA`) via `responseMimeType: "application/json"`.
+    4.  Stores the parsed result in the `GeminiResult` collection mapping to the document ID.
+
+---
+
+## 🌐 API Routes (`app/api/`)
+
+*   **[app/api/upload/route.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/api/upload/route.ts)**: Handles document registration.
+    *   *Drive Mode*: Extracts File ID from Google Drive share link, calculates size via a `HEAD` request, and stores the Document metadata in MongoDB.
+    *   *PDF Mode*: Writes the uploaded file buffer to the local `docus/` folder under a collision-free filename, registering it in MongoDB.
+*   **[app/api/documents/route.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/api/documents/route.ts)**: Fetches and filters documents by `name` or `tags` (combining terms split by `#`). Filters out hidden documents unless a searched tag matches one of the document's `hiddenTags`. Returns a list with `password` omitted (but sets `hasPassword` indicator).
+*   **[app/api/download/route.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/api/download/route.ts)**: Receives a document `id` and `password`. If password matches the database, it returns a binary PDF payload. For Drive files, it proxies/buffers Google Drive's download endpoint to serve the PDF directly to the client.
+*   **[app/api/gemini/route.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/api/gemini/route.ts)**: POST endpoint taking a document ID to execute the Gemini analysis pipeline (`processWithGemini`).
+*   **[app/api/hierarchy/route.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/api/hierarchy/route.ts)**: POST endpoint processing terminal input commands (`root`, `navigate`, `create <Name> <tag_Name>`, `id`, `adopt <ID>`, `custody <ID> [?name]`, `disown <ID>`, `guardian <ID>`, `destroy <ID> [?name] [-all]`, and node selection navigation / `cd`). Auto-seeds demo nodes (`CUFE`, `BUE`, `MEC`, etc.) on first boot if the database is empty.
+*   **[app/api/migrate-documents/route.ts](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/api/migrate-documents/route.ts)**: Maintenance route that sets default values (empty lists / false) on older documents for newly introduced database properties.
+
+---
+
+## 🖥️ UI Pages (`app/`)
+
+*   **`/`**: Landing home page ([app/page.tsx](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/page.tsx)).
+*   **`/signIn`**: Authenticates users ([app/signIn/page.tsx](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/signIn/page.tsx)). Integrates Google OAuth via [GoogleSignInBtn.tsx](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/components/GoogleSignInBtn.tsx) and supports credentials register/login.
+*   **`/upload_doc`**: Admin page to register new documents ([app/upload_doc/page.tsx](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/upload_doc/page.tsx)). Allows typing document metadata, tags, toggling advanced visibility details, and pasting a Google Drive link. *(Note: local PDF upload is UI-redirected to Google Drive upload in the template code)*.
+*   **`/get_doc`**: Dashboard to search, list, and download documents ([app/get_doc/page.tsx](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/get_doc/page.tsx)). Prompts the user for a password if the target document is protected.
+*   **`/terminal`**: A terminal emulator using the Ubuntu Mono font ([app/terminal/page.tsx](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/terminal/page.tsx)) allowing interactive hierarchy queries and parent/child creations matching design aesthetics.
+*   **`/gemini_test`**: Diagnostic page ([app/gemini_test/page.tsx](file:///c:/Users/AIO12TH-RTX30WHITE/bakaboria/app/gemini_test/page.tsx)) allowing developers to manually input a document ID and witness Gemini's structured analysis JSON response.

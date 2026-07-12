@@ -12,12 +12,15 @@ export async function GET(request: NextRequest) {
 
     const conditions: any[] = [];
 
+    // Parse searched tags for use in both filtering and hidden-tag matching
+    let searchedTags: string[] = [];
+
     if (nameQuery && nameQuery.trim().length > 0) {
       conditions.push({ name: { $regex: nameQuery.trim(), $options: "i" } });
     }
 
     if (tagsQuery && tagsQuery.trim().length > 0) {
-      const searchedTags = tagsQuery
+      searchedTags = tagsQuery
         .split("#")
         .map((tag) => tag.trim().toLowerCase())
         .filter((tag) => tag.length > 0);
@@ -41,8 +44,18 @@ export async function GET(request: NextRequest) {
         .sort({ createdAt: -1 });
     }
 
-    // Strip password but expose hasPassword flag
-    const documents = rawDocs.map(({ password, ...rest }) => ({
+    // Filter out hidden documents unless a searched tag matches a hiddenTag
+    const visibleDocs = rawDocs.filter((doc) => {
+      if (!doc.hidden) return true;
+
+      // Hidden doc: only show if at least one searched tag is in hiddenTags
+      if (searchedTags.length === 0) return false;
+      const docHiddenTags = (doc.hiddenTags || []).map((t: string) => t.toLowerCase());
+      return searchedTags.some((st) => docHiddenTags.includes(st));
+    });
+
+    // Strip password but expose hasPassword flag and new fields
+    const documents = visibleDocs.map(({ password, ...rest }) => ({
       ...rest,
       hasPassword: !!password,
     }));
@@ -56,3 +69,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
