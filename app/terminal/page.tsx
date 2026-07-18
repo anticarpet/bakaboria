@@ -26,17 +26,19 @@ export default function TerminalPage() {
   const [path, setPath] = useState<CurrentNode[]>([
     { id: "", Name: "CUFE", tag_Name: "CUFE" }
   ]);
+  const [selectedDoc, setSelectedDoc] = useState<{ id: string; name: string } | null>(null);
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<HistoryItem[]>([
-    { prompt: "# #CUFE > ", command: "root" },
-    { prompt: "#> ", command: "navigate" },
-    { output: "╠═ #CUFE\n╠═ #BUE\n╠═ #GUC\n╠═ #MAST" },
-    { prompt: "#> ", command: "CUFE" },
-    { output: "╠═ #MEC\n╠═ #EECE\n╠═ #CMP" },
-    { prompt: "# #CUFE > ", command: "create ARC ARCH" },
-    { output: "node ARC created sucessfully." },
-    { prompt: "# #CUFE > ", command: "navigate" },
-    { output: "╠═ #MEC\n╠═ #EECE\n╠═ #CMP\n╠═ #ARC" }
+    { output: "Welcome to CUFE Terminal. Type 'help' to see all commands and their syntax." },
+    // { prompt: "# #CUFE > ", command: "root" },
+    // { prompt: "#> ", command: "navigate" },
+    // { output: "╠═ #CUFE\n╠═ #BUE\n╠═ #GUC\n╠═ #MAST" },
+    // { prompt: "#> ", command: "CUFE" },
+    // { output: "╠═ #MEC\n╠═ #EECE\n╠═ #CMP" },
+    // { prompt: "# #CUFE > ", command: "create ARC ARCH" },
+    // { output: "node ARC created sucessfully." },
+    // { prompt: "# #CUFE > ", command: "navigate" },
+    // { output: "╠═ #MEC\n╠═ #EECE\n╠═ #CMP\n╠═ #ARC" }
   ]);
   const [loading, setLoading] = useState(false);
 
@@ -95,9 +97,13 @@ export default function TerminalPage() {
     syncCurrentNode();
   }, []);
 
-  const getPromptPrefix = (currentPath: CurrentNode[]) => {
+  const getPromptPrefix = (currentPath: CurrentNode[], currentDoc: { name: string } | null) => {
     if (currentPath.length === 0) return `#> `;
-    return `# ${currentPath.map(n => `#${n.Name}`).join(" ")} > `;
+    const pathStr = currentPath.map(n => `#${n.Name}`).join(" ");
+    if (currentDoc) {
+      return `# ${pathStr} /${currentDoc.name} > `;
+    }
+    return `# ${pathStr} > `;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -106,7 +112,7 @@ export default function TerminalPage() {
     const trimmedInput = input.trim();
     if (!trimmedInput) return;
 
-    const currentPrompt = getPromptPrefix(path);
+    const currentPrompt = getPromptPrefix(path, selectedDoc);
     
     // Add command to history
     setHistory((prev) => [...prev, { prompt: currentPrompt, command: trimmedInput }]);
@@ -119,7 +125,8 @@ export default function TerminalPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           command: trimmedInput,
-          currentNodeId: currentNode?.id || null
+          currentNodeId: currentNode?.id || null,
+          selectedDocId: selectedDoc?.id || null
         })
       });
 
@@ -133,6 +140,7 @@ export default function TerminalPage() {
         if (data.action === "root") {
           setCurrentNode(null);
           setPath([]);
+          setSelectedDoc(null);
         } else if (data.action === "cd") {
           setPath((prev) => {
             const nextPath = prev.slice(0, -1);
@@ -140,6 +148,7 @@ export default function TerminalPage() {
             setCurrentNode(parentNode);
             return nextPath;
           });
+          setSelectedDoc(null);
         } else if (data.action === "navigate" && data.currentNode) {
           setPath((prev) => {
             const nextPath = [...prev];
@@ -154,6 +163,16 @@ export default function TerminalPage() {
               return nextPath;
             }
           });
+          setSelectedDoc(null);
+        } else if (data.action === "select_doc") {
+          setSelectedDoc(data.selectedDoc);
+        } else if (data.action === "rename_doc") {
+          setSelectedDoc((prev) => prev ? { ...prev, name: data.name } : null);
+        } else if (data.action === "rename_hier") {
+          setCurrentNode(data.currentNode);
+          setPath((prev) => {
+            return prev.map((n) => n.id === data.currentNode.id ? data.currentNode : n);
+          });
         }
       } else {
         const errData = await res.json();
@@ -167,7 +186,7 @@ export default function TerminalPage() {
     }
   };
 
-  const promptPrefix = getPromptPrefix(path);
+  const promptPrefix = getPromptPrefix(path, selectedDoc);
 
   if (sessionStatus === "loading" || !authorized) {
     return null;
@@ -235,17 +254,17 @@ export default function TerminalPage() {
         {/* Navigation Link back to upload */}
         <div className="flex justify-between items-center">
           <Link
-            href="/upload_doc"
+            href="/"
             className="text-black hover:text-slate-600 transition-colors flex items-center gap-2 text-sm font-medium"
           >
-            ← Back to Upload
+            ← Back to Home
           </Link>
         </div>
 
         {/* Title */}
-        <h1 className="text-5xl font-black text-black tracking-tight select-none">
+        <div className="text-5xl font-black text-black tracking-tight select-none">
           Terminal
-        </h1>
+        </div>
 
         {/* Terminal Box */}
         <div className="bg-white border-4 border-black rounded-xl p-6 shadow-xl min-h-[500px] flex flex-col justify-between terminal-font text-lg text-black leading-[1.2]">

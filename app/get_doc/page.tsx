@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 
 interface DocumentItem {
   _id: string;
@@ -20,20 +20,35 @@ interface DocumentItem {
   hasPassword: boolean;
   processed: boolean;
   reviewed: boolean;
-  // are the rest of the tags missing?
 }
+
+interface HierarchyNodeRef {
+  id: string;
+  Name: string;
+}
+
+type SearchMode = "search" | "folders";
 
 export default function GetDocPage() {
   const { data: session } = useSession();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
+  const [searchMode, setSearchMode] = useState<SearchMode>("search");
   const [nameSearch, setNameSearch] = useState("");
   const [tagsSearch, setTagsSearch] = useState("");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [isDefaultView, setIsDefaultView] = useState(true);
+  const [folderPath, setFolderPath] = useState<HierarchyNodeRef[]>([]);
+  const [folderChildren, setFolderChildren] = useState<HierarchyNodeRef[]>([]);
+  const [currentFolderNodeId, setCurrentFolderNodeId] = useState<string | null>(null);
   const [passwords, setPasswords] = useState<{ [key: string]: string }>({});
   const [downloading, setDownloading] = useState<{ [key: string]: boolean }>({});
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+  const folderPathDisplay =
+    folderPath.length > 0
+      ? `:${folderPath.map((node) => `/${node.Name}`).join("")}`
+      : ":/";
 
   const fetchDocuments = async (name = nameSearch, tags = tagsSearch) => {
     setLoading(true);
@@ -57,6 +72,78 @@ export default function GetDocPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadFolderNode = async (nodeId: string | null) => {
+    setLoading(true);
+    try {
+      const url = nodeId ? `/api/hierarchy?nodeId=${nodeId}` : "/api/hierarchy";
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error("Failed to fetch hierarchy node");
+        setFolderChildren([]);
+        setDocuments([]);
+        return;
+      }
+
+      const data = await res.json();
+      setFolderChildren(data.children || []);
+
+      const fileIds: string[] = data.fileIds || [];
+      if (fileIds.length === 0) {
+        setDocuments([]);
+        return;
+      }
+
+      const docRes = await fetch(`/api/documents?ids=${fileIds.join(",")}`);
+      if (docRes.ok) {
+        setDocuments(await docRes.json());
+      } else {
+        setDocuments([]);
+      }
+    } catch (error) {
+      console.error("Folder fetch error:", error);
+      setFolderChildren([]);
+      setDocuments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFolderChildClick = (child: HierarchyNodeRef) => {
+    setFolderPath((prev) => [...prev, child]);
+    setCurrentFolderNodeId(child.id);
+    loadFolderNode(child.id);
+  };
+
+  const handleFolderPathClick = (index: number) => {
+    if (index < 0) {
+      setFolderPath([]);
+      setCurrentFolderNodeId(null);
+      loadFolderNode(null);
+      return;
+    }
+
+    const newPath = folderPath.slice(0, index + 1);
+    const node = newPath[newPath.length - 1];
+    setFolderPath(newPath);
+    setCurrentFolderNodeId(node.id);
+    loadFolderNode(node.id);
+  };
+
+  const switchToSearchMode = () => {
+    if (searchMode === "search") return;
+    setSearchMode("search");
+    fetchDocuments("", "");
+  };
+
+  const switchToFoldersMode = () => {
+    if (searchMode === "folders") return;
+    setSearchMode("folders");
+    setIsDefaultView(false);
+    setFolderPath([]);
+    setCurrentFolderNodeId(null);
+    loadFolderNode(null);
   };
 
   useEffect(() => {
@@ -143,7 +230,7 @@ export default function GetDocPage() {
 
       {/* ── Logo watermark ── */}
       {/* PC: wide crop, left-anchored */}
-      <div
+      {/* <div
         className="pointer-events-none select-none fixed bottom-0 left-0 hidden sm:block"
         style={{ opacity: 0.065, zIndex: 0 }}
         aria-hidden="true"
@@ -156,7 +243,7 @@ export default function GetDocPage() {
           style={{ objectFit: "contain", objectPosition: "left bottom" }}
           priority
         />
-      </div>
+      </div> */}
       {/* Mobile: smaller, bottom-left */}
       <div
         className="pointer-events-none select-none fixed bottom-0 left-0 block sm:hidden"
@@ -173,28 +260,86 @@ export default function GetDocPage() {
         />
       </div>
 
+      
+
+      
+
       <div className="relative z-10 max-w-6xl w-full mx-auto space-y-8 flex-1 flex flex-col">
 
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <Link
-            href="/upload_doc"
-            className="text-black hover:text-slate-600 transition-colors flex items-center gap-2 text-sm font-medium"
-          >
-            ← Upload Document
-          </Link>
-        </div>
+   
 
         {/* Dashboard Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1">
 
+          
+
           {/* Left Panel: Search */}
           <div className="lg:col-span-5 space-y-6">
+            {session?.user && (
+              <div className=" max-w-2xl flex items-center justify-between mb-6 px-1">
+                <div className="flex items-center gap-3">
+                  {session.user.image ? (
+                    <Image
+                      src={session.user.image}
+                      alt={session.user.name ?? "User"}
+                      width={36}
+                      height={36}
+                      className="rounded-full border border-black/10"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-black flex items-center justify-center text-white text-sm font-semibold">
+                      {session.user.name?.[0] ?? "U"}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-black leading-none">{session.user.name}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{session.user.email}</p>
+                  </div>
+                </div>
+                <button
+                  id="sign-out-btn"
+                  onClick={() => signOut({ callbackUrl: "/signIn" })}
+                  className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-black border border-slate-200 hover:border-black rounded-lg px-3 py-1.5 transition-all"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  Sign out
+                </button>
+              </div>
+            )}
             <div className="bg-white border border-3 border-black rounded-xl p-6 sm:p-8 shadow-sm space-y-6">
               <h1 className="text-3xl font-bold tracking-tight text-black">
                 Get a document
               </h1>
 
+              {/* Mode toggle */}
+              <div className="flex items-center justify-between gap-3 p-1 bg-slate-100 border border-black/10 rounded-lg">
+                <button
+                  type="button"
+                  onClick={switchToSearchMode}
+                  className={`flex-1 text-sm font-semibold px-3 py-2 rounded-md transition-all ${
+                    searchMode === "search"
+                      ? "bg-black text-white shadow-sm"
+                      : "text-slate-600 hover:text-black"
+                  }`}
+                >
+                  Search
+                </button>
+                <button
+                  type="button"
+                  onClick={switchToFoldersMode}
+                  className={`flex-1 text-sm font-semibold px-3 py-2 rounded-md transition-all ${
+                    searchMode === "folders"
+                      ? "bg-black text-white shadow-sm"
+                      : "text-slate-600 hover:text-black"
+                  }`}
+                >
+                  Folders
+                </button>
+              </div>
+
+              {searchMode === "search" ? (
               <form onSubmit={handleSearchSubmit} className="space-y-5">
                 {/* Search by Name */}
                 <div className="space-y-1.5">
@@ -263,6 +408,73 @@ export default function GetDocPage() {
                   </button>
                 )}
               </form>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-black">
+                      folders
+                    </label>
+                    <div className="rounded-lg border border-slate-800 bg-white px-4 py-2.5 text-sm text-black font-mono break-all min-h-[42px] flex items-center">
+                      {folderPath.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleFolderPathClick(-1)}
+                          className="hover:underline text-left"
+                        >
+                          {folderPathDisplay}
+                        </button>
+                      ) : (
+                        <span className="flex flex-wrap items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleFolderPathClick(-1)}
+                            className="hover:underline shrink-0"
+                          >
+                            :
+                          </button>
+                          {folderPath.map((node, index) => (
+                            <span key={node.id} className="flex items-center shrink-0">
+                              <span>/</span>
+                              <button
+                                type="button"
+                                onClick={() => handleFolderPathClick(index)}
+                                className="hover:underline"
+                              >
+                                {node.Name}
+                              </button>
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {folderChildren.length > 0 && (
+                    <div className="space-y-2">
+                      {folderChildren.map((child) => (
+                        <button
+                          key={child.id}
+                          type="button"
+                          onClick={() => handleFolderChildClick(child)}
+                          className="w-full text-left text-sm font-medium text-black border border-black/20 hover:border-black hover:bg-slate-50 rounded-lg px-4 py-2.5 transition-all"
+                        >
+                          → {child.Name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {folderChildren.length === 0 && currentFolderNodeId && (
+                    <p className="text-xs text-slate-500">No sub-folders in this location.</p>
+                  )}
+                </div>
+              )}
+
+              <Link href="upload_doc">
+            <div className="border-4 border-black rounded-xl bg-white text-black font-extrabold p-4 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg">
+              upload documents
+            </div>
+            </Link>
             </div>
           </div>
 
@@ -270,10 +482,17 @@ export default function GetDocPage() {
           <div className="lg:col-span-7 flex flex-col space-y-4">
             <div className="flex justify-between items-center px-1">
               <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">
-                {isDefaultView ? "Recent PDFs" : "Results"}
+                {searchMode === "folders"
+                  ? currentFolderNodeId
+                    ? folderPath[folderPath.length - 1]?.Name || "Folder"
+                    : "Root"
+                  : isDefaultView
+                    ? "Recent PDFs"
+                    : "Results"}
               </h2>
               <span className="text-xs text-slate-400 font-medium">
-                {documents.length} {documents.length === 1 ? "document" : "documents"}{isDefaultView ? " shown" : " found"}
+                {documents.length} {documents.length === 1 ? "document" : "documents"}
+                {searchMode === "search" && isDefaultView ? " shown" : " found"}
               </span>
             </div>
 
@@ -295,8 +514,16 @@ export default function GetDocPage() {
                   <svg className="h-12 w-12 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <p className="text-slate-500 font-medium text-sm">No documents found matching your filters.</p>
-                  <p className="text-slate-400 text-xs">Try adjusting your search criteria or uploading a new file.</p>
+                  <p className="text-slate-500 font-medium text-sm">
+                    {searchMode === "folders"
+                      ? "No documents in this folder."
+                      : "No documents found matching your filters."}
+                  </p>
+                  <p className="text-slate-400 text-xs">
+                    {searchMode === "folders"
+                      ? "Navigate into a folder or link documents using the terminal."
+                      : "Try adjusting your search criteria or uploading a new file."}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-4">

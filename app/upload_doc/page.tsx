@@ -250,7 +250,7 @@ export default function UploadDocPage() {
 
       {/* ── Logo watermark ── */}
       {/* PC: wide crop, left-anchored */}
-      <div
+      {/* <div
         className="pointer-events-none select-none fixed bottom-0 left-0 hidden sm:block"
         style={{ opacity: 0.065, zIndex: 0 }}
         aria-hidden="true"
@@ -263,7 +263,7 @@ export default function UploadDocPage() {
           style={{ objectFit: "contain", objectPosition: "left bottom" }}
           priority
         />
-      </div>
+      </div> */}
       {/* Mobile: smaller, bottom-left */}
       <div
         className="pointer-events-none select-none fixed bottom-0 left-0 block sm:hidden"
@@ -720,7 +720,7 @@ export default function UploadDocPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-black hover:bg-slate-700 px-5 py-3 text-sm font-semibold text-white shadow transition-all focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.98]"
+              className="w-full border-4 border-black rounded-xl bg-white text-black font-extrabold p-4 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg"
             >
               {loading ? (
                 <>
@@ -739,7 +739,7 @@ export default function UploadDocPage() {
 
             {/* Get docs button */}
             <Link href="get_doc">
-            <div className="w-full flex items-center justify-center gap-2 rounded-xl bg-black hover:bg-slate-700 px-5 py-3 text-sm font-semibold text-white shadow transition-all cursor-pointer active:scale-[0.98]">
+            <div className="border-4 border-black rounded-xl bg-white text-black font-extrabold p-4 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg">
               Get Documents
             </div>
             </Link>

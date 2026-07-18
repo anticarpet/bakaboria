@@ -9,39 +9,52 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const nameQuery = searchParams.get("name");
     const tagsQuery = searchParams.get("tags");
-
-    const conditions: any[] = [];
+    const idsQuery = searchParams.get("ids");
 
     // Parse searched tags for use in both filtering and hidden-tag matching
     let searchedTags: string[] = [];
-
-    if (nameQuery && nameQuery.trim().length > 0) {
-      conditions.push({ name: { $regex: nameQuery.trim(), $options: "i" } });
-    }
 
     if (tagsQuery && tagsQuery.trim().length > 0) {
       searchedTags = tagsQuery
         .split("#")
         .map((tag) => tag.trim().toLowerCase())
         .filter((tag) => tag.length > 0);
-
-      if (searchedTags.length > 0) {
-        conditions.push({ tags: { $all: searchedTags } });
-      }
     }
 
     let rawDocs: any[];
 
-    if (conditions.length === 0) {
-      // No filters: return the 20 most recent documents of any type
-      rawDocs = await DocumentModel.find({})
-        .lean()
-        .sort({ createdAt: -1 })
-        .limit(20);
+    if (idsQuery && idsQuery.trim().length > 0) {
+      const ids = idsQuery
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0);
+
+      rawDocs = ids.length
+        ? await DocumentModel.find({ _id: { $in: ids } })
+            .lean()
+            .sort({ createdAt: -1 })
+        : [];
     } else {
-      rawDocs = await DocumentModel.find({ $or: conditions })
-        .lean()
-        .sort({ createdAt: -1 });
+      const conditions: any[] = [];
+
+      if (nameQuery && nameQuery.trim().length > 0) {
+        conditions.push({ name: { $regex: nameQuery.trim(), $options: "i" } });
+      }
+
+      if (searchedTags.length > 0) {
+        conditions.push({ tags: { $all: searchedTags } });
+      }
+
+      if (conditions.length === 0) {
+        rawDocs = await DocumentModel.find({})
+          .lean()
+          .sort({ createdAt: -1 })
+          .limit(20);
+      } else {
+        rawDocs = await DocumentModel.find({ $or: conditions })
+          .lean()
+          .sort({ createdAt: -1 });
+      }
     }
 
     // Filter out hidden documents unless a searched tag matches a hiddenTag

@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 const { auth } = NextAuth(authConfig);
 
 // Routes that require an authenticated session
-const PROTECTED_PATHS = ["/upload_doc", "/get_doc"];
+const PROTECTED_PATHS = ["/upload_doc"];
 
 export default auth((req) => {
   const { nextUrl, auth: session } = req as any;

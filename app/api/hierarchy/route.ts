@@ -7,6 +7,14 @@ import { HierarchyModel } from "@/models/Hierarchy";
 import { DocumentModel } from "@/models/Document";
 import { GeminiResultModel } from "@/models/GeminiResult";
 import { processWithGemini, generateExamWithGemini } from "@/lib/gemini";
+import { auth } from "@/app/auth";
+import  todo  from "@/app/todo";
+
+function extractFolderId(url: string): string {
+  const match = url.match(/folders\/([a-zA-Z0-9-_]+)/);
+  if (match) return match[1];
+  return url;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,7 +69,7 @@ export async function POST(request: NextRequest) {
       await cufe.save();
     }
 
-    const { command, currentNodeId } = await request.json();
+    const { command, currentNodeId, selectedDocId } = await request.json();
 
     if (typeof command !== "string") {
       return NextResponse.json({ error: "Invalid command input." }, { status: 400 });
@@ -74,6 +82,46 @@ export async function POST(request: NextRequest) {
 
     const parts = trimmed.split(/\s+/);
     const cmdName = parts[0].toLowerCase();
+
+    // 0. HELP command
+    if (cmdName === "help") {
+      const helpOutput = [
+        "Available Commands:",
+        "╠═ help                                  Display this help menu",
+        "╠═ root                                  Reset navigation path to root",
+        "╠═ navigate                              List child nodes or root nodes",
+        "╠═ create <Name> <tag_Name>              Create a new hierarchy node",
+        "╠═ cd                                    Go back one node in path",
+        "╠═ docs [?ID]                            List documents in current or specified node",
+        "╠═ doc <name|number>                     Select a document",
+        "╠═ rename [doc|hier] <name>              Rename selected doc or current node",
+        "╠═ tags --tags <t1> <t2>... | tags --d   Set or delete tags for selected doc",
+        "╠═ bulk <folder_id> [?ID]                Bulk upload PDFs from Google Drive",
+        "╠═ id                                    Display current node ID",
+        "╠═ files [?ID]                           Display files linked to current or specified node",
+        "╠═ adopt <ID>                            Adopt target node as child",
+        "╠═ custody <ID> [?name]                  Adopt children of target node",
+        "╠═ disown <ID>                           Remove child node relationship",
+        "╠═ guardian <ID>                         Add a parent to current node",
+        "╠═ destroy <ID> [?name] [-all]           Destroy node, children, or specific child",
+        "╠═ process <PdfID>                       Process PDF with Gemini",
+        "╠═ verify <PdfID>                        Verify PDF document",
+        "╠═ unverify <PdfID>                      Unverify PDF document",
+        "╠═ delete <PdfID>                        Delete PDF document and Gemini results",
+        "╠═ caste <PdfID> [?ID]                   Caste PDF to current/specified node",
+        "╠═ liberate <PdfID> [--all]              Remove node from caste or clear all castes",
+        "╠═ generate <prompt>                     Generate exam with Gemini using node PDFs",
+        "╠═ <node_name|tag_name>                  Navigate into node",
+        "easter eggs:",
+        "╠═ todo                                  displays future plans for the website"
+
+      ].join("\n");
+
+      return NextResponse.json({
+        success: true,
+        output: helpOutput
+      });
+    }
 
     // 1. ROOT command
     if (cmdName === "root") {
@@ -172,6 +220,359 @@ export async function POST(request: NextRequest) {
         success: true,
         output: `node ${name} created sucessfully.` // using user's specific spelling 'sucessfully'
       });
+    }
+
+    // --- New Command: DOCS ---
+    if (cmdName === "docs") {
+      const targetNodeId = parts[1] || currentNodeId;
+      if (!targetNodeId) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: No hierarchy node specified or selected."
+        });
+      }
+      if (!mongoose.Types.ObjectId.isValid(targetNodeId)) {
+        return NextResponse.json({
+          success: false,
+          output: `Error: Invalid ID format "${targetNodeId}".`
+        });
+      }
+      const hierarchyNode = await HierarchyModel.findById(targetNodeId).lean();
+      if (!hierarchyNode) {
+        return NextResponse.json({
+          success: false,
+          output: `Error: Hierarchy node with ID ${targetNodeId} not found.`
+        });
+      }
+      const fileIds = (hierarchyNode.files || []).map((id: any) => id.toString());
+      if (fileIds.length === 0) {
+        return NextResponse.json({
+          success: true,
+          output: "No documents found."
+        });
+      }
+      const docs = await DocumentModel.find({ _id: { $in: fileIds } });
+      const orderedDocs = fileIds
+        .map((id: string) => docs.find((d: any) => d._id.toString() === id))
+        .filter(Boolean);
+
+      if (orderedDocs.length === 0) {
+        return NextResponse.json({
+          success: true,
+          output: "No documents found."
+        });
+      }
+
+      const output = orderedDocs
+        .map((doc: any, index: number) => `${index + 1}. ${doc.name} ${doc._id}`)
+        .join("\n");
+      return NextResponse.json({
+        success: true,
+        output
+      });
+    }
+
+    // --- New Command: DOC ---
+    if (cmdName === "doc") {
+      const docArg = parts.slice(1).join(" ").trim();
+      if (!docArg) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: Please specify a document name or number."
+        });
+      }
+      if (!currentNodeId) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: No hierarchy node selected."
+        });
+      }
+      const hierarchyNode = await HierarchyModel.findById(currentNodeId).lean();
+      if (!hierarchyNode) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: Current hierarchy node not found."
+        });
+      }
+      const fileIds = (hierarchyNode.files || []).map((id: any) => id.toString());
+      if (fileIds.length === 0) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: No documents found in this node."
+        });
+      }
+      const docs = await DocumentModel.find({ _id: { $in: fileIds } });
+      const orderedDocs = fileIds
+        .map((id: string) => docs.find((d: any) => d._id.toString() === id))
+        .filter(Boolean);
+
+      let targetDoc: any = null;
+      const num = parseInt(docArg, 10);
+      if (!isNaN(num)) {
+        if (num < 1 || num > orderedDocs.length) {
+          return NextResponse.json({
+            success: false,
+            output: `Error: Invalid document number ${num}.`
+          });
+        }
+        targetDoc = orderedDocs[num - 1];
+      } else {
+        // Find by name (case-insensitive)
+        targetDoc = orderedDocs.find((d: any) => d.name.toLowerCase() === docArg.toLowerCase());
+        if (!targetDoc) {
+          return NextResponse.json({
+            success: false,
+            output: `Error: Document "${docArg}" not found in this node.`
+          });
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        action: "select_doc",
+        selectedDoc: {
+          id: targetDoc._id.toString(),
+          name: targetDoc.name
+        },
+        output: `Document "${targetDoc.name}" selected.`
+      });
+    }
+
+    // --- New Command: RENAME ---
+    if (cmdName === "rename") {
+      const typeArg = parts[1]?.toLowerCase();
+      const newName = parts.slice(2).join(" ").trim();
+
+      if (typeArg === "doc") {
+        if (!selectedDocId) {
+          return NextResponse.json({
+            success: false,
+            output: "Error: No document selected."
+          });
+        }
+        if (!newName) {
+          return NextResponse.json({
+            success: false,
+            output: "Usage: rename doc $name"
+          });
+        }
+        const doc = await DocumentModel.findByIdAndUpdate(
+          selectedDocId,
+          { $set: { name: newName } },
+          { new: true }
+        );
+        if (!doc) {
+          return NextResponse.json({
+            success: false,
+            output: "Error: Selected document not found."
+          });
+        }
+        return NextResponse.json({
+          success: true,
+          action: "rename_doc",
+          name: newName,
+          output: `Document renamed to "${newName}" successfully.`
+        });
+      } else if (typeArg === "hier") {
+        if (!currentNodeId) {
+          return NextResponse.json({
+            success: false,
+            output: "Error: No hierarchy node selected."
+          });
+        }
+        if (!newName) {
+          return NextResponse.json({
+            success: false,
+            output: "Usage: rename hier $name"
+          });
+        }
+        const node = await HierarchyModel.findById(currentNodeId);
+        if (!node) {
+          return NextResponse.json({
+            success: false,
+            output: "Error: Selected hierarchy node not found."
+          });
+        }
+        const oldName = node.Name;
+        node.Name = newName;
+        await node.save();
+
+        // Update all parents/children arrays referencing this node
+        await HierarchyModel.updateMany(
+          { "parents.p-id": node._id },
+          { $set: { "parents.$[elem].p-name": newName } },
+          { arrayFilters: [{ "elem.p-id": node._id }] }
+        );
+
+        await HierarchyModel.updateMany(
+          { "children.p-id": node._id },
+          { $set: { "children.$[elem].p-name": newName } },
+          { arrayFilters: [{ "elem.p-id": node._id }] }
+        );
+
+        return NextResponse.json({
+          success: true,
+          action: "rename_hier",
+          currentNode: {
+            id: node._id.toString(),
+            Name: node.Name,
+            tag_Name: node.tag_Name
+          },
+          output: `node "${oldName}" renamed to "${newName}" successfully.`
+        });
+      } else {
+        return NextResponse.json({
+          success: false,
+          output: "Usage: rename [doc|hier] $name"
+        });
+      }
+    }
+
+    // --- New Command: TAGS ---
+    if (cmdName === "tags") {
+      if (!selectedDocId) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: No document selected."
+        });
+      }
+
+      const hasDelete = parts.includes("--d");
+      if (hasDelete) {
+        await DocumentModel.findByIdAndUpdate(selectedDocId, { $set: { tags: [] } });
+        return NextResponse.json({
+          success: true,
+          output: "All tags deleted successfully."
+        });
+      }
+
+      const tagsIdx = parts.indexOf("--tags");
+      if (tagsIdx === -1) {
+        return NextResponse.json({
+          success: false,
+          output: "Usage: tags --tags tag1 tag2 ... or tags --d"
+        });
+      }
+
+      const newTags = parts.slice(tagsIdx + 1);
+      if (newTags.length === 0) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: No tags specified after --tags."
+        });
+      }
+
+      await DocumentModel.findByIdAndUpdate(selectedDocId, { $set: { tags: newTags } });
+      return NextResponse.json({
+        success: true,
+        output: `Tags changed to: ${newTags.join(", ")}`
+      });
+    }
+
+    // --- New Command: BULK ---
+    if (cmdName === "bulk") {
+      const folderInput = parts[1];
+      if (!folderInput) {
+        return NextResponse.json({
+          success: false,
+          output: "Usage: bulk $folder_id ?ID"
+        });
+      }
+
+      const targetNodeId = parts[2] || currentNodeId;
+      if (!targetNodeId) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: No hierarchy node specified or selected."
+        });
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(targetNodeId)) {
+        return NextResponse.json({
+          success: false,
+          output: `Error: Invalid ID format "${targetNodeId}".`
+        });
+      }
+
+      const hierarchyNode = await HierarchyModel.findById(targetNodeId);
+      if (!hierarchyNode) {
+        return NextResponse.json({
+          success: false,
+          output: `Error: Hierarchy node with ID ${targetNodeId} not found.`
+        });
+      }
+
+      const folderId = extractFolderId(folderInput);
+      const apiKey = process.env.DRIVE_API_KEY;
+      if (!apiKey) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: DRIVE_API_KEY environment variable is not set."
+        });
+      }
+
+      try {
+        const url = `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+mimeType='application/pdf'+and+trashed=false&fields=files(id,name,size)&key=${apiKey}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          const errorData = await response.json();
+          return NextResponse.json({
+            success: false,
+            output: `Error fetching Google Drive folder: ${errorData.error?.message || response.statusText}`
+          });
+        }
+
+        const data = await response.json();
+        const files = data.files || [];
+
+        if (files.length === 0) {
+          return NextResponse.json({
+            success: true,
+            output: "No PDF files found in the Google Drive folder."
+          });
+        }
+
+        const addedDocIds: mongoose.Types.ObjectId[] = [];
+        const session = await auth();
+
+        for (const file of files) {
+          const canonicalUrl = `https://drive.google.com/file/d/${file.id}/view`;
+          const newDoc = new DocumentModel({
+            uid: session?.user?.id || "admin",
+            name: file.name,
+            password: "",
+            tags: [],
+            primaryTags: [],
+            propertyTags: [],
+            hidden: false,
+            hiddenTags: [],
+            fileLocation: canonicalUrl,
+            fileName: file.name,
+            fileSize: file.size ? parseInt(file.size, 10) : 0,
+            mimeType: "application/pdf",
+            storeMethod: "DRIVE",
+            caste: [hierarchyNode._id]
+          });
+
+          await newDoc.save();
+          addedDocIds.push(newDoc._id);
+        }
+
+        // Add their IDs to the hierarchy node
+        await HierarchyModel.findByIdAndUpdate(targetNodeId, {
+          $push: { files: { $each: addedDocIds } }
+        });
+
+        return NextResponse.json({
+          success: true,
+          output: `Bulk upload completed successfully. Uploaded ${files.length} PDFs to hierarchy node "${hierarchyNode.Name}".`
+        });
+      } catch (err: any) {
+        return NextResponse.json({
+          success: false,
+          output: `Error performing bulk upload: ${err.message}`
+        });
+      }
     }
 
     // --- New Command: ID ---
@@ -585,6 +986,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // command: to do
+    if (cmdName === "todo") {
+      return NextResponse.json({
+        success: true,
+        action: "cd",
+        output: todo
+      });
+    }
+
     // --- Command: PROCESS ---
     if (cmdName === "process") {
       const pdfId = parts[1];
@@ -944,5 +1354,56 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("Hierarchy API Error:", error);
     return NextResponse.json({ error: error?.message || "An error occurred." }, { status: 500 });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    await connectDB();
+
+    const { searchParams } = new URL(request.url);
+    const nodeId = searchParams.get("nodeId");
+
+    if (!nodeId) {
+      const roots = await HierarchyModel.find({ parents: { $size: 0 } })
+        .lean()
+        .sort({ Name: 1 });
+
+      return NextResponse.json({
+        node: null,
+        children: roots.map((node: any) => ({
+          id: node._id.toString(),
+          Name: node.Name,
+        })),
+        fileIds: [],
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(nodeId)) {
+      return NextResponse.json({ error: "Invalid node ID." }, { status: 400 });
+    }
+
+    const node = await HierarchyModel.findById(nodeId).lean();
+    if (!node) {
+      return NextResponse.json({ error: "Hierarchy node not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      node: {
+        id: node._id.toString(),
+        Name: node.Name,
+      },
+      children: (node.children || []).map((child: any) => ({
+        id: child["p-id"].toString(),
+        Name: child["p-name"],
+      })),
+      fileIds: (node.files || []).map((id: any) => id.toString()),
+    });
+  } catch (error: any) {
+    console.error("Hierarchy browse error:", error);
+    return NextResponse.json(
+      { error: error?.message || "An error occurred." },
+      { status: 500 }
+    );
   }
 }
