@@ -282,7 +282,7 @@ export default function UploadDocPage() {
 
       {/* ── Session header ── */}
       {session?.user && (
-        <div className="w-full max-w-2xl flex items-center justify-between mb-6 px-1">
+        <div className="w-full max-w-2xl flex items-center justify-between mb-2 px-1">
           <div className="flex items-center gap-3">
             {session.user.image ? (
               <Image
@@ -302,6 +302,7 @@ export default function UploadDocPage() {
               <p className="text-xs text-slate-500 mt-0.5">{session.user.email}</p>
             </div>
           </div>
+          <div className="flex justify-end">
           <button
             id="sign-out-btn"
             onClick={() => signOut({ callbackUrl: "/signIn" })}
@@ -312,6 +313,13 @@ export default function UploadDocPage() {
             </svg>
             Sign out
           </button>
+
+          <Link href="/">
+            <div className="border-4 border-black rounded-xl bg-white text-black  p-1 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg">
+              home
+            </div>
+            </Link>
+        </div>
         </div>
       )}
 
@@ -432,8 +440,8 @@ export default function UploadDocPage() {
             </div>
 
             {showAdvanced && (
-              <div className="space-y-5 border-t border-black/15 pt-5 animate-fadeIn">
-                {/* Primary Tags */}
+              <div >
+                {/* Primary Tags
                 <div>
                   <label htmlFor="primaryTags" className="block text-sm font-semibold text-black">
                     Primary Tags <span className="text-xs text-slate-500 font-normal">(Separated by hashtags)</span>
@@ -458,9 +466,9 @@ export default function UploadDocPage() {
                       ))}
                     </div>
                   )}
-                </div>
+                </div> */}
 
-                {/* Property Tags */}
+                {/* Property Tags
                 <div>
                   <label htmlFor="propertyTags" className="block text-sm font-semibold text-black">
                     Property Tags <span className="text-xs text-slate-500 font-normal">(Separated by hashtags)</span>
@@ -485,7 +493,7 @@ export default function UploadDocPage() {
                       ))}
                     </div>
                   )}
-                </div>
+                </div> */}
 
                 {/* Hidden Switch */}
                 <div className="flex items-center justify-between border-t border-black/10 pt-4">
@@ -510,7 +518,7 @@ export default function UploadDocPage() {
 
                 {/* Hidden Tags */}
                 {hidden && (
-                  <div className="space-y-1.5 border-t border-black/10 pt-4 animate-fadeIn">
+                  <div className="space-y-1.5  pt-4 animate-fadeIn">
                     <label htmlFor="hiddenTags" className="block text-sm font-semibold text-black">
                       Hidden Tags <span className="text-xs text-slate-500 font-normal">(Separated by hashtags)</span>
                     </label>

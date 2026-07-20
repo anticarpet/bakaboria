@@ -113,7 +113,104 @@ export default function TerminalPage() {
     if (!trimmedInput) return;
 
     const currentPrompt = getPromptPrefix(path, selectedDoc);
-    
+
+    // ── Client-side: PATH command ─────────────────────────────────────────────
+    if (trimmedInput.toLowerCase() === "path") {
+      const pathStr = path.length === 0
+        ? "#root"
+        : path.map(n => `#${n.Name}`).join("#");
+      setHistory(prev => [
+        ...prev,
+        { prompt: currentPrompt, command: trimmedInput },
+        { output: pathStr }
+      ]);
+      setInput("");
+      setLoading(false);
+      return;
+    }
+
+    // ── Client-side: SCUT command ─────────────────────────────────────────────
+    // Syntax: scut #A#B#C  (segments separated by #, leading # optional)
+    if (trimmedInput.toLowerCase().startsWith("scut ")) {
+      const scutArg = trimmedInput.slice(5).trim(); // everything after 'scut '
+      // Split on # and filter empty strings (handles both '#A#B' and 'A#B')
+      const segments = scutArg.split("#").map(s => s.trim()).filter(Boolean);
+
+      if (segments.length === 0) {
+        setHistory(prev => [
+          ...prev,
+          { prompt: currentPrompt, command: trimmedInput },
+          { output: "Usage: scut #A#B#C" }
+        ]);
+        setInput("");
+        setLoading(false);
+        return;
+      }
+
+      setHistory(prev => [...prev, { prompt: currentPrompt, command: trimmedInput }]);
+      setInput("");
+      setLoading(true);
+
+      // We need to reset to root first, then traverse each segment.
+      // scut always resolves from the root level.
+      let resolvedPath: CurrentNode[] = [];
+      let resolvedNode: CurrentNode | null = null;
+      let aborted = false;
+
+      for (const segment of segments) {
+        try {
+          const parentId = resolvedNode ? resolvedNode.id : null;
+          const cmdStr = parentId
+            ? `scut_resolve ${segment} ${parentId}`
+            : `scut_resolve ${segment}`;
+
+          const res = await fetch("/api/hierarchy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              command: cmdStr,
+              currentNodeId: null,
+              selectedDocId: null
+            })
+          });
+          const data = await res.json();
+
+          if (!res.ok || !data.success || !data.currentNode) {
+            setHistory(prev => [
+              ...prev,
+              { output: data.output || `Error: node "${segment}" not found.` }
+            ]);
+            aborted = true;
+            break;
+          }
+
+          resolvedPath = [...resolvedPath, data.currentNode];
+          resolvedNode = data.currentNode;
+        } catch (err: any) {
+          setHistory(prev => [
+            ...prev,
+            { output: `Network error: ${err.message}` }
+          ]);
+          aborted = true;
+          break;
+        }
+      }
+
+      if (!aborted && resolvedNode) {
+        setPath(resolvedPath);
+        setCurrentNode(resolvedNode);
+        setSelectedDoc(null);
+        setHistory(prev => [
+          ...prev,
+          { output: `Jumped to: ${resolvedPath.map(n => `#${n.Name}`).join("#")}` }
+        ]);
+      }
+
+      setLoading(false);
+      setTimeout(() => inputRef.current?.focus(), 0);
+      return;
+    }
+
     // Add command to history
     setHistory((prev) => [...prev, { prompt: currentPrompt, command: trimmedInput }]);
     setInput("");
@@ -132,7 +229,7 @@ export default function TerminalPage() {
 
       if (res.ok) {
         const data = await res.json();
-        
+
         if (data.output) {
           setHistory((prev) => [...prev, { output: data.output }]);
         }
@@ -174,6 +271,7 @@ export default function TerminalPage() {
             return prev.map((n) => n.id === data.currentNode.id ? data.currentNode : n);
           });
         }
+        // action === "path" is handled client-side before the API call; nothing to do here.
       } else {
         const errData = await res.json();
         setHistory((prev) => [...prev, { output: `Error: ${errData.error || "Failed to execute command."}` }]);
@@ -193,11 +291,12 @@ export default function TerminalPage() {
   }
 
   return (
-    <div 
+    <div
       className="relative min-h-screen bg-white text-slate-900 flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8 font-sans overflow-hidden cursor-text"
       onClick={focusInput}
     >
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @import url('https://fonts.googleapis.com/css2?family=Ubuntu+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
         .terminal-font {
           font-family: 'Ubuntu Mono', monospace;
@@ -262,13 +361,19 @@ export default function TerminalPage() {
         </div>
 
         {/* Title */}
-        <div className="text-5xl font-black text-black tracking-tight select-none">
-          Terminal
+        <div className="flex justify-between items-center">
+          <div className="text-5xl font-black text-black tracking-tight select-none">
+            Terminal
+          </div>
+          <Link href="/">
+            <div className="border-4 border-black rounded-xl bg-white text-black  p-1 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg">
+              home
+            </div>
+          </Link>
         </div>
-
         {/* Terminal Box */}
         <div className="bg-white border-4 border-black rounded-xl p-6 shadow-xl min-h-[500px] flex flex-col justify-between terminal-font text-lg text-black leading-[1.2]">
-          
+
           {/* History */}
           <div className="space-y-0.5 overflow-y-auto max-h-[450px] terminal-line">
             {history.map((item, idx) => (

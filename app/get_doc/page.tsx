@@ -260,18 +260,18 @@ export default function GetDocPage() {
         />
       </div>
 
-      
 
-      
+
+
 
       <div className="relative z-10 max-w-6xl w-full mx-auto space-y-8 flex-1 flex flex-col">
 
-   
+
 
         {/* Dashboard Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1">
 
-          
+
 
           {/* Left Panel: Search */}
           <div className="lg:col-span-5 space-y-6">
@@ -296,6 +296,7 @@ export default function GetDocPage() {
                     <p className="text-xs text-slate-500 mt-0.5">{session.user.email}</p>
                   </div>
                 </div>
+                <div className = "flex justify-end">
                 <button
                   id="sign-out-btn"
                   onClick={() => signOut({ callbackUrl: "/signIn" })}
@@ -306,6 +307,16 @@ export default function GetDocPage() {
                   </svg>
                   Sign out
                 </button>
+                <Link href="/">
+                  <div className="border-4 border-black rounded-xl bg-white text-black  p-1 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg">
+                    home
+                  </div>
+                </Link></div>
+
+
+
+
+
               </div>
             )}
             <div className="bg-white border border-3 border-black rounded-xl p-6 sm:p-8 shadow-sm space-y-6">
@@ -318,96 +329,94 @@ export default function GetDocPage() {
                 <button
                   type="button"
                   onClick={switchToSearchMode}
-                  className={`flex-1 text-sm font-semibold px-3 py-2 rounded-md transition-all ${
-                    searchMode === "search"
+                  className={`flex-1 text-sm font-semibold px-3 py-2 rounded-md transition-all ${searchMode === "search"
                       ? "bg-black text-white shadow-sm"
                       : "text-slate-600 hover:text-black"
-                  }`}
+                    }`}
                 >
                   Search
                 </button>
                 <button
                   type="button"
                   onClick={switchToFoldersMode}
-                  className={`flex-1 text-sm font-semibold px-3 py-2 rounded-md transition-all ${
-                    searchMode === "folders"
+                  className={`flex-1 text-sm font-semibold px-3 py-2 rounded-md transition-all ${searchMode === "folders"
                       ? "bg-black text-white shadow-sm"
                       : "text-slate-600 hover:text-black"
-                  }`}
+                    }`}
                 >
                   Folders
                 </button>
               </div>
 
               {searchMode === "search" ? (
-              <form onSubmit={handleSearchSubmit} className="space-y-5">
-                {/* Search by Name */}
-                <div className="space-y-1.5">
-                  <label htmlFor="nameSearch" className="block text-sm font-semibold text-black">
-                    Search by Name
-                  </label>
-                  <div className="flex rounded-lg shadow-sm">
-                    <input
-                      type="text"
-                      id="nameSearch"
-                      placeholder="e.g. Physics final"
-                      value={nameSearch}
-                      onChange={(e) => setNameSearch(e.target.value)}
-                      className="block w-full rounded-l-lg bg-white border border-slate-800 border-r-0 px-4 py-2.5 text-black placeholder-slate-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
-                    />
-                    <button
-                      type="submit"
-                      className="inline-flex items-center justify-center px-4 rounded-r-lg bg-black hover:bg-slate-700 text-white transition-all cursor-pointer active:scale-95"
-                      title="Search"
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </button>
+                <form onSubmit={handleSearchSubmit} className="space-y-5">
+                  {/* Search by Name */}
+                  <div className="space-y-1.5">
+                    <label htmlFor="nameSearch" className="block text-sm font-semibold text-black">
+                      Search by Name
+                    </label>
+                    <div className="flex rounded-lg shadow-sm">
+                      <input
+                        type="text"
+                        id="nameSearch"
+                        placeholder="e.g. Physics final"
+                        value={nameSearch}
+                        onChange={(e) => setNameSearch(e.target.value)}
+                        className="block w-full rounded-l-lg bg-white border border-slate-800 border-r-0 px-4 py-2.5 text-black placeholder-slate-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
+                      />
+                      <button
+                        type="submit"
+                        className="inline-flex items-center justify-center px-4 rounded-r-lg bg-black hover:bg-slate-700 text-white transition-all cursor-pointer active:scale-95"
+                        title="Search"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Search by Tags */}
-                <div className="space-y-1.5">
-                  <label htmlFor="tagsSearch" className="block text-sm font-semibold text-black">
-                    Filter by Tags
-                  </label>
-                  <div className="flex rounded-lg shadow-sm">
-                    <input
-                      type="text"
-                      id="tagsSearch"
-                      placeholder="e.g. #physics #CUFE"
-                      value={tagsSearch}
-                      onChange={(e) => setTagsSearch(e.target.value)}
-                      className="block w-full rounded-l-lg bg-white border border-slate-800 border-r-0 px-4 py-2.5 text-black placeholder-slate-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
-                    />
-                    <button
-                      type="submit"
-                      className="inline-flex items-center justify-center px-4 rounded-r-lg bg-black hover:bg-slate-700 text-white transition-all cursor-pointer active:scale-95"
-                      title="Search"
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </button>
+                  {/* Search by Tags */}
+                  <div className="space-y-1.5">
+                    <label htmlFor="tagsSearch" className="block text-sm font-semibold text-black">
+                      Filter by Tags
+                    </label>
+                    <div className="flex rounded-lg shadow-sm">
+                      <input
+                        type="text"
+                        id="tagsSearch"
+                        placeholder="e.g. #physics #CUFE"
+                        value={tagsSearch}
+                        onChange={(e) => setTagsSearch(e.target.value)}
+                        className="block w-full rounded-l-lg bg-white border border-slate-800 border-r-0 px-4 py-2.5 text-black placeholder-slate-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
+                      />
+                      <button
+                        type="submit"
+                        className="inline-flex items-center justify-center px-4 rounded-r-lg bg-black hover:bg-slate-700 text-white transition-all cursor-pointer active:scale-95"
+                        title="Search"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Clear filters */}
-                {(nameSearch || tagsSearch) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNameSearch("");
-                      setTagsSearch("");
-                      fetchDocuments("", "");
-                    }}
-                    className="w-full text-center text-xs text-slate-500 hover:text-black transition-colors py-2 block underline"
-                  >
-                    Clear Search Filters
-                  </button>
-                )}
-              </form>
+                  {/* Clear filters */}
+                  {(nameSearch || tagsSearch) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNameSearch("");
+                        setTagsSearch("");
+                        fetchDocuments("", "");
+                      }}
+                      className="w-full text-center text-xs text-slate-500 hover:text-black transition-colors py-2 block underline"
+                    >
+                      Clear Search Filters
+                    </button>
+                  )}
+                </form>
               ) : (
                 <div className="space-y-4">
                   <div className="space-y-1.5">
@@ -471,10 +480,10 @@ export default function GetDocPage() {
               )}
 
               <Link href="upload_doc">
-            <div className="border-4 border-black rounded-xl bg-white text-black font-extrabold p-4 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg">
-              upload documents
-            </div>
-            </Link>
+                <div className="border-4 border-black rounded-xl bg-white text-black font-extrabold p-4 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg">
+                  upload documents
+                </div>
+              </Link>
             </div>
           </div>
 

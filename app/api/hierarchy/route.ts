@@ -89,9 +89,9 @@ export async function POST(request: NextRequest) {
         "Available Commands:",
         "╠═ help                                  Display this help menu",
         "╠═ root                                  Reset navigation path to root",
-        "╠═ navigate                              List child nodes or root nodes",
+        "╠═ navigate or n                         List child nodes or root nodes",
         "╠═ create <Name> <tag_Name>              Create a new hierarchy node",
-        "╠═ cd                                    Go back one node in path",
+        "╠═ back                                  Go back one node in path",
         "╠═ docs [?ID]                            List documents in current or specified node",
         "╠═ doc <name|number>                     Select a document",
         "╠═ rename [doc|hier] <name>              Rename selected doc or current node",
@@ -111,6 +111,10 @@ export async function POST(request: NextRequest) {
         "╠═ caste <PdfID> [?ID]                   Caste PDF to current/specified node",
         "╠═ liberate <PdfID> [--all]              Remove node from caste or clear all castes",
         "╠═ generate <prompt>                     Generate exam with Gemini using node PDFs",
+        "╠═ scut #A#B#C                           Jump directly to a node by path segments",
+        "╠═ path                                  Display the current path",
+        "╠═ upload <link> [--tags t1 t2...]       Upload a PDF from a link into current node",
+        "╠═ clone <drive_link>                    Clone a Google Drive folder tree into current node",
         "╠═ <node_name|tag_name>                  Navigate into node",
         "easter eggs:",
         "╠═ todo                                  displays future plans for the website"
@@ -134,7 +138,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. NAVIGATE command
-    if (cmdName === "navigate") {
+    if (cmdName === "navigate" || cmdName === "n") {
       if (!currentNodeId) {
         // Find parentless nodes
         const roots = await HierarchyModel.find({ parents: { $size: 0 } }).lean();
@@ -172,21 +176,21 @@ export async function POST(request: NextRequest) {
       const name = parts[1];
       const tagName = parts[2];
 
-      if (!name || !tagName) {
+      if (!name) {
         return NextResponse.json({
           success: false,
-          output: "Usage: create <Name> <tag_Name>"
+          output: "Usage: create <Name>"
         });
       }
 
       // Check if tag_Name is unique
-      const existing = await HierarchyModel.findOne({ tag_Name: tagName });
-      if (existing) {
-        return NextResponse.json({
-          success: false,
-          output: `Error: Node with tag name "${tagName}" already exists.`
-        });
-      }
+      // const existing = await HierarchyModel.findOne({ tag_Name: tagName });
+      // if (existing) {
+      //   return NextResponse.json({
+      //     success: false,
+      //     output: `Error: Node with tag name "${tagName}" already exists.`
+      //   });
+      // }
 
       let parents: any[] = [];
       if (currentNodeId) {
@@ -202,7 +206,6 @@ export async function POST(request: NextRequest) {
 
       const newNode = new HierarchyModel({
         Name: name,
-        tag_Name: tagName,
         parents,
         children: []
       });
@@ -978,7 +981,7 @@ export async function POST(request: NextRequest) {
     }
 
     // --- New Command: CD ---
-    if (cmdName === "cd") {
+    if (cmdName === "back") {
       return NextResponse.json({
         success: true,
         action: "cd",
@@ -993,6 +996,309 @@ export async function POST(request: NextRequest) {
         action: "cd",
         output: todo
       });
+    }
+
+    // --- Command: PATH (handled client-side, stub for API) ---
+    if (cmdName === "path") {
+      return NextResponse.json({
+        success: true,
+        action: "path"
+      });
+    }
+
+    // --- Command: SCUT_RESOLVE (used internally by client-side scut) ---
+    // Resolves a single named segment relative to a given parent node.
+    // Usage: scut_resolve <segmentName> [parentNodeId]
+    if (cmdName === "scut_resolve") {
+      const segmentName = parts[1];
+      const parentId = parts[2] || null;
+
+      if (!segmentName) {
+        return NextResponse.json({
+          success: false,
+          output: "Usage: scut_resolve <segmentName> [parentNodeId]"
+        });
+      }
+
+      let matchingNode: any = null;
+
+      if (!parentId) {
+        // Root-level search
+        matchingNode = await HierarchyModel.findOne({
+          parents: { $size: 0 },
+          $or: [
+            { Name: { $regex: new RegExp(`^${segmentName}$`, "i") } },
+            { tag_Name: { $regex: new RegExp(`^${segmentName}$`, "i") } }
+          ]
+        });
+      } else {
+        if (!mongoose.Types.ObjectId.isValid(parentId)) {
+          return NextResponse.json({
+            success: false,
+            output: `Error: Invalid parent ID format "${parentId}".`
+          });
+        }
+        const parentNode = await HierarchyModel.findById(parentId);
+        if (!parentNode) {
+          return NextResponse.json({
+            success: false,
+            output: `Error: Parent node with ID ${parentId} not found.`
+          });
+        }
+        const childIds = parentNode.children.map((c: any) => c["p-id"]);
+        matchingNode = await HierarchyModel.findOne({
+          _id: { $in: childIds },
+          $or: [
+            { Name: { $regex: new RegExp(`^${segmentName}$`, "i") } },
+            { tag_Name: { $regex: new RegExp(`^${segmentName}$`, "i") } }
+          ]
+        });
+      }
+
+      if (!matchingNode) {
+        return NextResponse.json({
+          success: false,
+          output: `node "${segmentName}" not found`
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        action: "navigate",
+        output: "",
+        currentNode: {
+          id: matchingNode._id.toString(),
+          Name: matchingNode.Name,
+          tag_Name: matchingNode.tag_Name
+        }
+      });
+    }
+
+    // --- Command: UPLOAD ---
+    // Usage: upload <link> [--tags tag1 tag2 ...]
+    if (cmdName === "upload") {
+      const rawLink = parts[1];
+      if (!rawLink) {
+        return NextResponse.json({
+          success: false,
+          output: "Usage: upload <link> [--tags tag1 tag2 ...]"
+        });
+      }
+      if (!currentNodeId) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: No hierarchy node selected. Navigate to a node first."
+        });
+      }
+
+      const hierarchyNode = await HierarchyModel.findById(currentNodeId);
+      if (!hierarchyNode) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: Current hierarchy node not found."
+        });
+      }
+
+      // Parse --tags
+      const tagsIdx = parts.indexOf("--tags");
+      const uploadTags: string[] = tagsIdx !== -1 ? parts.slice(tagsIdx + 1) : [];
+
+      // Derive a file name from the URL
+      let fileName: string;
+      try {
+        const urlObj = new URL(rawLink);
+        const lastSegment = urlObj.pathname.split("/").filter(Boolean).pop() || "document";
+        fileName = decodeURIComponent(lastSegment);
+        if (!fileName.toLowerCase().endsWith(".pdf")) fileName += ".pdf";
+      } catch {
+        fileName = "document.pdf";
+      }
+
+      // Normalise Google Drive share links to a canonical view URL
+      let fileLocation = rawLink;
+      const driveIdMatch = rawLink.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (driveIdMatch) {
+        fileLocation = `https://drive.google.com/file/d/${driveIdMatch[1]}/view`;
+        fileName = fileName.replace(/^file$/, "document");
+      }
+
+      const session = await auth();
+      const newDoc = new DocumentModel({
+        uid: session?.user?.id || "admin",
+        name: fileName,
+        password: "",
+        tags: uploadTags,
+        primaryTags: [],
+        propertyTags: [],
+        hidden: false,
+        hiddenTags: [],
+        fileLocation,
+        fileName,
+        fileSize: 0,
+        mimeType: "application/pdf",
+        storeMethod: "DRIVE",
+        caste: [hierarchyNode._id]
+      });
+
+      await newDoc.save();
+
+      await HierarchyModel.findByIdAndUpdate(currentNodeId, {
+        $push: { files: newDoc._id }
+      });
+
+      return NextResponse.json({
+        success: true,
+        output: `Uploaded "${fileName}" to ${hierarchyNode.Name}${
+          uploadTags.length ? ` with tags: ${uploadTags.join(", ")}` : ""
+        }. ID: ${newDoc._id}`
+      });
+    }
+
+    // --- Command: CLONE ---
+    // Usage: clone <drive_link>
+    // Recursively mirrors a Google Drive folder tree into the current node.
+    if (cmdName === "clone") {
+      const driveInput = parts[1];
+      if (!driveInput) {
+        return NextResponse.json({
+          success: false,
+          output: "Usage: clone <drive_link>"
+        });
+      }
+      if (!currentNodeId) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: No hierarchy node selected. Navigate to a node first."
+        });
+      }
+
+      const apiKey = process.env.DRIVE_API_KEY;
+      if (!apiKey) {
+        return NextResponse.json({
+          success: false,
+          output: "Error: DRIVE_API_KEY environment variable is not set."
+        });
+      }
+
+      const rootFolderId = extractFolderId(driveInput);
+      const cloneSession = await auth();
+
+      // Recursive helper: clone a Drive folder into a given hierarchy parent
+      const cloneDriveFolder = async (
+        driveFolderId: string,
+        folderName: string,
+        parentHierarchyId: string
+      ): Promise<{ filesAdded: number; foldersAdded: number }> => {
+        // 1. Create a new hierarchy node for this folder under parentHierarchyId
+        const parentNode = await HierarchyModel.findById(parentHierarchyId);
+        if (!parentNode) throw new Error(`Parent node ${parentHierarchyId} not found`);
+
+        const newNode = new HierarchyModel({
+          Name: folderName,
+          tag_Name: folderName,
+          parents: [{ "p-name": parentNode.Name, "p-id": parentNode._id }],
+          children: [],
+          files: []
+        });
+        await newNode.save();
+
+        await HierarchyModel.findByIdAndUpdate(parentHierarchyId, {
+          $push: { children: { "p-name": folderName, "p-id": newNode._id } }
+        });
+
+        let totalFiles = 0;
+        let totalFolders = 1; // count this folder itself
+
+        // 2. Fetch PDF files directly in this folder
+        const pdfUrl = `https://www.googleapis.com/drive/v3/files?q='${driveFolderId}'+in+parents+and+mimeType='application/pdf'+and+trashed=false&fields=files(id,name,size)&key=${apiKey}`;
+        const pdfRes = await fetch(pdfUrl);
+        if (!pdfRes.ok) {
+          const errData = await pdfRes.json();
+          throw new Error(`Drive API error: ${errData.error?.message || pdfRes.statusText}`);
+        }
+        const pdfData = await pdfRes.json();
+        const pdfFiles: any[] = pdfData.files || [];
+
+        const addedDocIds: mongoose.Types.ObjectId[] = [];
+        for (const file of pdfFiles) {
+          const canonicalUrl = `https://drive.google.com/file/d/${file.id}/view`;
+          const doc = new DocumentModel({
+            uid: cloneSession?.user?.id || "admin",
+            name: file.name,
+            password: "",
+            tags: [],
+            primaryTags: [],
+            propertyTags: [],
+            hidden: false,
+            hiddenTags: [],
+            fileLocation: canonicalUrl,
+            fileName: file.name,
+            fileSize: file.size ? parseInt(file.size, 10) : 0,
+            mimeType: "application/pdf",
+            storeMethod: "DRIVE",
+            caste: [newNode._id]
+          });
+          await doc.save();
+          addedDocIds.push(doc._id);
+        }
+
+        if (addedDocIds.length > 0) {
+          await HierarchyModel.findByIdAndUpdate(newNode._id, {
+            $push: { files: { $each: addedDocIds } }
+          });
+          totalFiles += addedDocIds.length;
+        }
+
+        // 3. Fetch sub-folders and recurse
+        const folderUrl = `https://www.googleapis.com/drive/v3/files?q='${driveFolderId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+trashed=false&fields=files(id,name)&key=${apiKey}`;
+        const folderRes = await fetch(folderUrl);
+        if (!folderRes.ok) {
+          const errData = await folderRes.json();
+          throw new Error(`Drive API error: ${errData.error?.message || folderRes.statusText}`);
+        }
+        const folderData = await folderRes.json();
+        const subFolders: any[] = folderData.files || [];
+
+        for (const subFolder of subFolders) {
+          const result = await cloneDriveFolder(
+            subFolder.id,
+            subFolder.name,
+            newNode._id.toString()
+          );
+          totalFiles += result.filesAdded;
+          totalFolders += result.foldersAdded;
+        }
+
+        return { filesAdded: totalFiles, foldersAdded: totalFolders };
+      };
+
+      try {
+        // Resolve the root folder name
+        const metaUrl = `https://www.googleapis.com/drive/v3/files/${rootFolderId}?fields=name&key=${apiKey}`;
+        const metaRes = await fetch(metaUrl);
+        let rootFolderName = "Cloned Folder";
+        if (metaRes.ok) {
+          const metaData = await metaRes.json();
+          rootFolderName = metaData.name || rootFolderName;
+        }
+
+        const { filesAdded, foldersAdded } = await cloneDriveFolder(
+          rootFolderId,
+          rootFolderName,
+          currentNodeId
+        );
+
+        const currentHierarchyNode = await HierarchyModel.findById(currentNodeId);
+        return NextResponse.json({
+          success: true,
+          output: `Clone complete! Created ${foldersAdded} folder node(s) and uploaded ${filesAdded} PDF(s) under "${currentHierarchyNode?.Name || currentNodeId}".`
+        });
+      } catch (err: any) {
+        return NextResponse.json({
+          success: false,
+          output: `Error during clone: ${err.message}`
+        });
+      }
     }
 
     // --- Command: PROCESS ---

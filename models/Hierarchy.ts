@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from "mongoose";
 
 export interface IHierarchy extends Document {
   Name: string;
-  tag_Name: string;
+  tag_Name?: string;
   parents: Array<{ "p-name": string; "p-id": mongoose.Types.ObjectId }>;
   children: Array<{ "p-name": string; "p-id": mongoose.Types.ObjectId }>;
   files: mongoose.Types.ObjectId[];
@@ -10,7 +10,7 @@ export interface IHierarchy extends Document {
 
 const HierarchySchema = new Schema<IHierarchy>({
   Name: { type: String, required: true },
-  tag_Name: { type: String, required: true, unique: true },
+  tag_Name: { type: String, required: false },
   parents: [
     {
       "p-name": { type: String, required: true },
