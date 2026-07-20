@@ -159,8 +159,8 @@ export default function TerminalPage() {
 
       for (const segment of segments) {
         try {
-          const parentId = resolvedNode ? resolvedNode.id : null;
-          const cmdStr = parentId
+          const parentId: string | null = resolvedNode ? resolvedNode.id : null;
+          const cmdStr: string = parentId
             ? `scut_resolve ${segment} ${parentId}`
             : `scut_resolve ${segment}`;
 
