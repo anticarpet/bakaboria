@@ -27,20 +27,25 @@ interface HierarchyNodeRef {
   Name: string;
 }
 
-type SearchMode = "search" | "folders";
-
 export default function GetDocPage() {
   const { data: session } = useSession();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
-  const [searchMode, setSearchMode] = useState<SearchMode>("search");
+
+  // Search inputs
   const [nameSearch, setNameSearch] = useState("");
   const [tagsSearch, setTagsSearch] = useState("");
-  const [documents, setDocuments] = useState<DocumentItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [isDefaultView, setIsDefaultView] = useState(true);
+
+  // Folder navigation
   const [folderPath, setFolderPath] = useState<HierarchyNodeRef[]>([]);
   const [folderChildren, setFolderChildren] = useState<HierarchyNodeRef[]>([]);
   const [currentFolderNodeId, setCurrentFolderNodeId] = useState<string | null>(null);
+  const [currentFolderFileIds, setCurrentFolderFileIds] = useState<string[] | null>(null); // null = root (search all)
+
+  // Results
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Download state
   const [passwords, setPasswords] = useState<{ [key: string]: string }>({});
   const [downloading, setDownloading] = useState<{ [key: string]: boolean }>({});
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
@@ -50,77 +55,144 @@ export default function GetDocPage() {
       ? `:${folderPath.map((node) => `/${node.Name}`).join("")}`
       : ":/";
 
-  const fetchDocuments = async (name = nameSearch, tags = tagsSearch) => {
+  // Determine whether the user has input something worth searching
+  const hasInput = nameSearch.trim() || tagsSearch.trim();
+
+  // ── Core search function ────────────────────────────────────────────────────
+  const runSearch = async (
+    name = nameSearch,
+    tags = tagsSearch,
+    fileIds = currentFolderFileIds
+  ) => {
+    // If nothing is typed, show empty results
+    // if (!name.trim() && !tags.trim()) {
+    //   setDocuments([]);
+    //   return;
+    // }
+
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (name.trim()) params.append("name", name.trim());
       if (tags.trim()) params.append("tags", tags.trim());
+      // If we have a folder selected, restrict to its file IDs
+      if (fileIds !== null && fileIds.length > 0) {
+        params.append("ids", fileIds.join(","));
+        // Also pass name/tags for post-filtering on the client side
+        // (server will return docs by ids; we filter client-side)
+        // Actually we send separate request: fetch ids first, then filter
+      } else if (fileIds !== null && fileIds.length === 0) {
+        // Folder is selected but has no files
+        setDocuments([]);
+        setLoading(false);
+        return;
+      }
+      console.log(3423432);
 
-      const hasFilters = name.trim() || tags.trim();
-      setIsDefaultView(!hasFilters);
+      let url: string;
+      if (fileIds !== null) {
+        // Folder selected: fetch folder docs, then filter by name/tags client-side
+        const folderRes = await fetch(`/api/documents?ids=${fileIds.join(",")}`);
+        if (!folderRes.ok) {
+          setDocuments([]);
+          return;
+        }
+        const folderDocs: DocumentItem[] = await folderRes.json();
+        const nameLower = name.trim().toLowerCase();
+        const searchTags = tags
+          .split("#")
+          .map((t) => t.trim().toLowerCase())
+          .filter((t) => t.length > 0);
 
-      const res = await fetch(`/api/documents?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setDocuments(data);
+        const filtered = folderDocs.filter((doc) => {
+          const matchesName = !nameLower || doc.name.toLowerCase().includes(nameLower);
+          const matchesTags =
+            searchTags.length === 0 ||
+            searchTags.every((st) => doc.tags.map((t) => t.toLowerCase()).includes(st));
+          return matchesName && matchesTags;
+        });
+        setDocuments(filtered);
+        return;
       } else {
-        console.error("Failed to fetch documents");
+        // No folder selected: global search via API
+        url = `/api/documents?${params.toString()}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          setDocuments(await res.json());
+        } else {
+          console.error("Failed to fetch documents");
+          setDocuments([]);
+        }
       }
     } catch (error) {
       console.error("Fetch error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadFolderNode = async (nodeId: string | null) => {
-    setLoading(true);
-    try {
-      const url = nodeId ? `/api/hierarchy?nodeId=${nodeId}` : "/api/hierarchy";
-      const res = await fetch(url);
-      if (!res.ok) {
-        console.error("Failed to fetch hierarchy node");
-        setFolderChildren([]);
-        setDocuments([]);
-        return;
-      }
-
-      const data = await res.json();
-      setFolderChildren(data.children || []);
-
-      const fileIds: string[] = data.fileIds || [];
-      if (fileIds.length === 0) {
-        setDocuments([]);
-        return;
-      }
-
-      const docRes = await fetch(`/api/documents?ids=${fileIds.join(",")}`);
-      if (docRes.ok) {
-        setDocuments(await docRes.json());
-      } else {
-        setDocuments([]);
-      }
-    } catch (error) {
-      console.error("Folder fetch error:", error);
-      setFolderChildren([]);
       setDocuments([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFolderChildClick = (child: HierarchyNodeRef) => {
-    setFolderPath((prev) => [...prev, child]);
-    setCurrentFolderNodeId(child.id);
-    loadFolderNode(child.id);
+  // ── Folder navigation ───────────────────────────────────────────────────────
+  const loadFolderNode = async (nodeId: string | null) => {
+    try {
+      const url = nodeId ? `/api/hierarchy?nodeId=${nodeId}` : "/api/hierarchy";
+      const res = await fetch(url);
+      if (!res.ok) {
+        setFolderChildren([]);
+        setCurrentFolderFileIds(null);
+        return;
+      }
+      const data = await res.json();
+      setFolderChildren(data.children || []);
+      if (nodeId === null) {
+        // Root: search globally
+        setCurrentFolderFileIds(null);
+      } else {
+        setCurrentFolderFileIds(data.fileIds || []);
+      }
+    } catch (error) {
+      console.error("Folder fetch error:", error);
+      setFolderChildren([]);
+      setCurrentFolderFileIds(null);
+    }
   };
 
-  const handleFolderPathClick = (index: number) => {
+  const handleFolderChildClick = async (child: HierarchyNodeRef) => {
+    const newPath = [...folderPath, child];
+    setFolderPath(newPath);
+    setCurrentFolderNodeId(child.id);
+    // Load children and file ids for new node
+    try {
+      const res = await fetch(`/api/hierarchy?nodeId=${child.id}`);
+      if (!res.ok) { setFolderChildren([]); setCurrentFolderFileIds([]); return; }
+      const data = await res.json();
+      setFolderChildren(data.children || []);
+      setCurrentFolderFileIds(data.fileIds || []);
+      // Re-run search with new file ids if there's input
+      
+        runSearch(nameSearch, tagsSearch, data.fileIds || []);
+     
+        setDocuments([]);
+      
+    } catch {
+      setFolderChildren([]);
+      setCurrentFolderFileIds([]);
+    }
+  };
+
+  const handleFolderPathClick = async (index: number) => {
+    console.log(12323);
     if (index < 0) {
       setFolderPath([]);
       setCurrentFolderNodeId(null);
-      loadFolderNode(null);
+      setCurrentFolderFileIds(null);
+      const res = await fetch("/api/hierarchy");
+      if (res.ok) {
+        const data = await res.json();
+        setFolderChildren(data.children || []);
+      }
+      runSearch(nameSearch, tagsSearch, null);
+      
       return;
     }
 
@@ -128,33 +200,39 @@ export default function GetDocPage() {
     const node = newPath[newPath.length - 1];
     setFolderPath(newPath);
     setCurrentFolderNodeId(node.id);
-    loadFolderNode(node.id);
+    try {
+      const res = await fetch(`/api/hierarchy?nodeId=${node.id}`);
+      if (!res.ok) { setFolderChildren([]); setCurrentFolderFileIds([]); return; }
+      const data = await res.json();
+      setFolderChildren(data.children || []);
+      setCurrentFolderFileIds(data.fileIds || []);
+      runSearch(nameSearch, tagsSearch, data.fileIds || []);
+      
+    } catch {
+      setFolderChildren([]);
+      setCurrentFolderFileIds([]);
+    }
   };
 
-  const switchToSearchMode = () => {
-    if (searchMode === "search") return;
-    setSearchMode("search");
-    fetchDocuments("", "");
+  // Back button: go up one level in folder path
+  const handleFolderBack = () => {
+    if (folderPath.length === 0) return; // already at root
+    handleFolderPathClick(folderPath.length - 2); // go up one
   };
 
-  const switchToFoldersMode = () => {
-    if (searchMode === "folders") return;
-    setSearchMode("folders");
-    setIsDefaultView(false);
-    setFolderPath([]);
-    setCurrentFolderNodeId(null);
-    loadFolderNode(null);
-  };
-
+  // ── Initialize folder tree on mount ────────────────────────────────────────
   useEffect(() => {
-    fetchDocuments("", "");
+    loadFolderNode(null);
+    // Don't fetch documents on mount — wait for user input
   }, []);
 
+  // Re-run search when inputs change (debounce-free for simplicity)
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchDocuments();
+    runSearch();
   };
 
+  // ── Download handling ────────────────────────────────────────────────────────
   const handlePasswordChange = (docId: string, val: string) => {
     setPasswords((prev) => ({ ...prev, [docId]: val }));
     if (errors[docId]) {
@@ -228,23 +306,7 @@ export default function GetDocPage() {
   return (
     <div className="relative min-h-screen bg-white text-slate-900 flex flex-col py-12 px-4 sm:px-6 lg:px-8 font-sans overflow-hidden">
 
-      {/* ── Logo watermark ── */}
-      {/* PC: wide crop, left-anchored */}
-      {/* <div
-        className="pointer-events-none select-none fixed bottom-0 left-0 hidden sm:block"
-        style={{ opacity: 0.065, zIndex: 0 }}
-        aria-hidden="true"
-      >
-        <Image
-          src="/logo.png"
-          alt=""
-          width={1360}
-          height={1120}
-          style={{ objectFit: "contain", objectPosition: "left bottom" }}
-          priority
-        />
-      </div> */}
-      {/* Mobile: smaller, bottom-left */}
+      {/* Mobile: watermark logo */}
       <div
         className="pointer-events-none select-none fixed bottom-0 left-0 block sm:hidden"
         style={{ opacity: 0.065, zIndex: 0 }}
@@ -260,20 +322,12 @@ export default function GetDocPage() {
         />
       </div>
 
-
-
-
-
       <div className="relative z-10 max-w-6xl w-full mx-auto space-y-8 flex-1 flex flex-col">
-
-
 
         {/* Dashboard Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1">
 
-
-
-          {/* Left Panel: Search */}
+          {/* ── Left Panel: Search + Folders ── */}
           <div className="lg:col-span-5 space-y-6">
             {session?.user && (
               <div className=" max-w-2xl flex items-center justify-between mb-6 px-1">
@@ -296,188 +350,191 @@ export default function GetDocPage() {
                     <p className="text-xs text-slate-500 mt-0.5">{session.user.email}</p>
                   </div>
                 </div>
-                <div className = "flex justify-end">
-                <button
-                  id="sign-out-btn"
-                  onClick={() => signOut({ callbackUrl: "/signIn" })}
-                  className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-black border border-slate-200 hover:border-black rounded-lg px-3 py-1.5 transition-all"
-                >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                  </svg>
-                  Sign out
-                </button>
-                <Link href="/">
-                  <div className="border-4 border-black rounded-xl bg-white text-black  p-1 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg">
-                    home
-                  </div>
-                </Link></div>
-
-
-
-
-
+                <div className="flex justify-end">
+                  <button
+                    id="sign-out-btn"
+                    onClick={() => signOut({ callbackUrl: "/signIn" })}
+                    className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-black border border-slate-200 hover:border-black rounded-lg px-3 py-1.5 transition-all"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Sign out
+                  </button>
+                  <Link href="/">
+                    <div className="border-4 border-black rounded-xl bg-white text-black  p-1 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg">
+                      home
+                    </div>
+                  </Link>
+                </div>
               </div>
             )}
+
             <div className="bg-white border border-3 border-black rounded-xl p-6 sm:p-8 shadow-sm space-y-6">
               <h1 className="text-3xl font-bold tracking-tight text-black">
                 Get a document
               </h1>
 
-              {/* Mode toggle */}
-              <div className="flex items-center justify-between gap-3 p-1 bg-slate-100 border border-black/10 rounded-lg">
-                <button
-                  type="button"
-                  onClick={switchToSearchMode}
-                  className={`flex-1 text-sm font-semibold px-3 py-2 rounded-md transition-all ${searchMode === "search"
-                      ? "bg-black text-white shadow-sm"
-                      : "text-slate-600 hover:text-black"
-                    }`}
-                >
-                  Search
-                </button>
-                <button
-                  type="button"
-                  onClick={switchToFoldersMode}
-                  className={`flex-1 text-sm font-semibold px-3 py-2 rounded-md transition-all ${searchMode === "folders"
-                      ? "bg-black text-white shadow-sm"
-                      : "text-slate-600 hover:text-black"
-                    }`}
-                >
-                  Folders
-                </button>
-              </div>
-
-              {searchMode === "search" ? (
-                <form onSubmit={handleSearchSubmit} className="space-y-5">
-                  {/* Search by Name */}
-                  <div className="space-y-1.5">
-                    <label htmlFor="nameSearch" className="block text-sm font-semibold text-black">
-                      Search by Name
-                    </label>
-                    <div className="flex rounded-lg shadow-sm">
-                      <input
-                        type="text"
-                        id="nameSearch"
-                        placeholder="e.g. Physics final"
-                        value={nameSearch}
-                        onChange={(e) => setNameSearch(e.target.value)}
-                        className="block w-full rounded-l-lg bg-white border border-slate-800 border-r-0 px-4 py-2.5 text-black placeholder-slate-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
-                      />
-                      <button
-                        type="submit"
-                        className="inline-flex items-center justify-center px-4 rounded-r-lg bg-black hover:bg-slate-700 text-white transition-all cursor-pointer active:scale-95"
-                        title="Search"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                      </button>
-                    </div>
+              {/* ── Search Inputs ── */}
+              <form onSubmit={handleSearchSubmit} className="space-y-4">
+                {/* Name */}
+                <div className="space-y-1.5">
+                  <label htmlFor="nameSearch" className="block text-sm font-semibold text-black">
+                    Search by Name
+                  </label>
+                  <div className="flex rounded-lg shadow-sm">
+                    <input
+                      type="text"
+                      id="nameSearch"
+                      placeholder="e.g. Physics final"
+                      value={nameSearch}
+                      onChange={(e) => {
+                        setNameSearch(e.target.value);
+                      }}
+                      className="block w-full rounded-l-lg bg-white border border-slate-800 border-r-0 px-4 py-2.5 text-black placeholder-slate-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
+                    />
+                    <button
+                      type="submit"
+                      className="inline-flex items-center justify-center px-4 rounded-r-lg bg-black hover:bg-slate-700 text-white transition-all cursor-pointer active:scale-95"
+                      title="Search"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </button>
                   </div>
+                </div>
 
-                  {/* Search by Tags */}
-                  <div className="space-y-1.5">
-                    <label htmlFor="tagsSearch" className="block text-sm font-semibold text-black">
-                      Filter by Tags
-                    </label>
-                    <div className="flex rounded-lg shadow-sm">
-                      <input
-                        type="text"
-                        id="tagsSearch"
-                        placeholder="e.g. #physics #CUFE"
-                        value={tagsSearch}
-                        onChange={(e) => setTagsSearch(e.target.value)}
-                        className="block w-full rounded-l-lg bg-white border border-slate-800 border-r-0 px-4 py-2.5 text-black placeholder-slate-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
-                      />
-                      <button
-                        type="submit"
-                        className="inline-flex items-center justify-center px-4 rounded-r-lg bg-black hover:bg-slate-700 text-white transition-all cursor-pointer active:scale-95"
-                        title="Search"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                      </button>
-                    </div>
+                {/* Tags */}
+                <div className="space-y-1.5">
+                  <label htmlFor="tagsSearch" className="block text-sm font-semibold text-black">
+                    Filter by Tags
+                  </label>
+                  <div className="flex rounded-lg shadow-sm">
+                    <input
+                      type="text"
+                      id="tagsSearch"
+                      placeholder="e.g. #physics #CUFE"
+                      value={tagsSearch}
+                      onChange={(e) => {
+                        setTagsSearch(e.target.value);
+                      }}
+                      className="block w-full rounded-l-lg bg-white border border-slate-800 border-r-0 px-4 py-2.5 text-black placeholder-slate-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
+                    />
+                    <button
+                      type="submit"
+                      className="inline-flex items-center justify-center px-4 rounded-r-lg bg-black hover:bg-slate-700 text-white transition-all cursor-pointer active:scale-95"
+                      title="Search"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </button>
                   </div>
+                </div>
 
-                  {/* Clear filters */}
-                  {(nameSearch || tagsSearch) && (
+                {/* Clear filters */}
+                {(nameSearch || tagsSearch) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNameSearch("");
+                      setTagsSearch("");
+                      setDocuments([]);
+                    }}
+                    className="w-full text-center text-xs text-slate-500 hover:text-black transition-colors py-1 block underline"
+                  >
+                    Clear Search Filters
+                  </button>
+                )}
+              </form>
+
+              {/* ── Divider ── */}
+              <div className="border-t border-black/10" />
+
+              {/* ── Folder Browser ── */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-semibold text-black">
+                    Browse Folders
+                  </label>
+                  {/* Back button */}
+                  {folderPath.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setNameSearch("");
-                        setTagsSearch("");
-                        fetchDocuments("", "");
-                      }}
-                      className="w-full text-center text-xs text-slate-500 hover:text-black transition-colors py-2 block underline"
+                      onClick={handleFolderBack}
+                      className="flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-black border border-black/20 hover:border-black rounded-lg px-2.5 py-1 transition-all"
                     >
-                      Clear Search Filters
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                      </svg>
+                      Back
                     </button>
                   )}
-                </form>
-              ) : (
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-sm font-semibold text-black">
-                      folders
-                    </label>
-                    <div className="rounded-lg border border-slate-800 bg-white px-4 py-2.5 text-sm text-black font-mono break-all min-h-[42px] flex items-center">
-                      {folderPath.length === 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => handleFolderPathClick(-1)}
-                          className="hover:underline text-left"
-                        >
-                          {folderPathDisplay}
-                        </button>
-                      ) : (
-                        <span className="flex flex-wrap items-center gap-0.5">
+                </div>
+
+                {/* Breadcrumb path */}
+                <div className="rounded-lg border border-slate-800 bg-white px-4 py-2.5 text-sm text-black font-mono break-all min-h-[42px] flex items-center">
+                  {folderPath.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => handleFolderPathClick(-1)}
+                      className="hover:underline text-left"
+                    >
+                      {folderPathDisplay}
+                    </button>
+                  ) : (
+                    <span className="flex flex-wrap items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleFolderPathClick(-1)}
+                        className="hover:underline shrink-0"
+                      >
+                        :
+                      </button>
+                      {folderPath.map((node, index) => (
+                        <span key={node.id} className="flex items-center shrink-0">
+                          <span>/</span>
                           <button
                             type="button"
-                            onClick={() => handleFolderPathClick(-1)}
-                            className="hover:underline shrink-0"
+                            onClick={() => handleFolderPathClick(index)}
+                            className="hover:underline"
                           >
-                            :
+                            {node.Name}
                           </button>
-                          {folderPath.map((node, index) => (
-                            <span key={node.id} className="flex items-center shrink-0">
-                              <span>/</span>
-                              <button
-                                type="button"
-                                onClick={() => handleFolderPathClick(index)}
-                                className="hover:underline"
-                              >
-                                {node.Name}
-                              </button>
-                            </span>
-                          ))}
                         </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {folderChildren.length > 0 && (
-                    <div className="space-y-2">
-                      {folderChildren.map((child) => (
-                        <button
-                          key={child.id}
-                          type="button"
-                          onClick={() => handleFolderChildClick(child)}
-                          className="w-full text-left text-sm font-medium text-black border border-black/20 hover:border-black hover:bg-slate-50 rounded-lg px-4 py-2.5 transition-all"
-                        >
-                          → {child.Name}
-                        </button>
                       ))}
-                    </div>
-                  )}
-
-                  {folderChildren.length === 0 && currentFolderNodeId && (
-                    <p className="text-xs text-slate-500">No sub-folders in this location.</p>
+                    </span>
                   )}
                 </div>
-              )}
+
+                {/* Children list */}
+                {folderChildren.length > 0 && (
+                  <div className="space-y-2">
+                    {folderChildren.map((child) => (
+                      <button
+                        key={child.id}
+                        type="button"
+                        onClick={() => handleFolderChildClick(child)}
+                        className="w-full text-left text-sm font-medium text-black border border-black/20 hover:border-black hover:bg-slate-50 rounded-lg px-4 py-2.5 transition-all"
+                      >
+                        → {child.Name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {folderChildren.length === 0 && currentFolderNodeId && (
+                  <p className="text-xs text-slate-500">No sub-folders in this location.</p>
+                )}
+
+                {/* Folder scope indicator */}
+                {currentFolderNodeId && (
+                  <p className="text-xs text-slate-400 italic">
+                    Search is scoped to: <span className="font-semibold not-italic text-slate-600">{folderPath[folderPath.length - 1]?.Name}</span>
+                  </p>
+                )}
+              </div>
 
               <Link href="upload_doc">
                 <div className="border-4 border-black rounded-xl bg-white text-black font-extrabold p-4 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg">
@@ -487,21 +544,20 @@ export default function GetDocPage() {
             </div>
           </div>
 
-          {/* Right Panel: Results */}
+          {/* ── Right Panel: Results ── */}
           <div className="lg:col-span-7 flex flex-col space-y-4">
             <div className="flex justify-between items-center px-1">
               <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">
-                {searchMode === "folders"
-                  ? currentFolderNodeId
+                {!hasInput
+                  ? "Results"
+                  : currentFolderNodeId
                     ? folderPath[folderPath.length - 1]?.Name || "Folder"
-                    : "Root"
-                  : isDefaultView
-                    ? "Recent PDFs"
                     : "Results"}
               </h2>
               <span className="text-xs text-slate-400 font-medium">
-                {documents.length} {documents.length === 1 ? "document" : "documents"}
-                {searchMode === "search" && isDefaultView ? " shown" : " found"}
+                {!hasInput
+                  ? "Enter a name or tag to search"
+                  : `${documents.length} ${documents.length === 1 ? "document" : "documents"} found`}
               </span>
             </div>
 
@@ -518,20 +574,32 @@ export default function GetDocPage() {
                     </div>
                   ))}
                 </div>
-              ) : documents.length === 0 ? (
+              )
+              //  : !hasInput ? ( //DEBUG, should be HasInput--------------------------------------------------------------------------------------------------------------------------
+              //   /* Nothing typed yet — prompt the user */
+              //   <div className="bg-white border border-black/10 rounded-xl p-12 text-center flex flex-col items-center justify-center space-y-3 h-full">
+              //     <svg className="h-12 w-12 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              //       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              //     </svg>
+              //     <p className="text-slate-500 font-medium text-sm">
+              //       Search for documents above
+              //     </p>
+              //     <p className="text-slate-400 text-xs">
+              //       Type a name or tag, then press Enter or click the search icon.
+              //       {currentFolderNodeId && " Results are scoped to the selected folder."}
+              //     </p>
+              //   </div>
+              // ) 
+              : documents.length === 0 ? (
                 <div className="bg-white border border-black/10 rounded-xl p-12 text-center flex flex-col items-center justify-center space-y-3 h-full">
                   <svg className="h-12 w-12 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   <p className="text-slate-500 font-medium text-sm">
-                    {searchMode === "folders"
-                      ? "No documents in this folder."
-                      : "No documents found matching your filters."}
+                    No documents found matching your filters.
                   </p>
                   <p className="text-slate-400 text-xs">
-                    {searchMode === "folders"
-                      ? "Navigate into a folder or link documents using the terminal."
-                      : "Try adjusting your search criteria or uploading a new file."}
+                    Try adjusting your search criteria or uploading a new file.
                   </p>
                 </div>
               ) : (
@@ -609,7 +677,7 @@ export default function GetDocPage() {
                                 </span>
                               )}
 
-                              {/* Processed badge — grey Gemini sparkle icon */}
+                              {/* Processed badge */}
                               {doc.processed && (
                                 <span
                                   title="Processed by Gemini"
@@ -623,7 +691,7 @@ export default function GetDocPage() {
                                 </span>
                               )}
 
-                              {/* Reviewed badge — grey thumbs-up icon */}
+                              {/* Reviewed badge */}
                               {doc.reviewed && (
                                 <span
                                   title="Reviewed"
@@ -655,7 +723,6 @@ export default function GetDocPage() {
                         {/* Bottom action row */}
                         <div className="pt-3 border-t border-black/10 flex flex-col sm:flex-row sm:items-center justify-end gap-3">
                           {doc.hasPassword ? (
-                            /* Password-protected: show input + download */
                             <>
                               <div className="flex items-center gap-2 w-full sm:max-w-xs">
                                 <label className="text-xs font-semibold text-slate-500 shrink-0">
@@ -699,7 +766,6 @@ export default function GetDocPage() {
                               </button>
                             </>
                           ) : (
-                            /* No password: single prominent Get Document button */
                             <button
                               onClick={() => handleDownload(doc)}
                               disabled={isDownloading}

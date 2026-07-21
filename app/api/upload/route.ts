@@ -3,6 +3,8 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { connectDB } from "@/lib/db";
 import { DocumentModel } from "@/models/Document";
+import { HierarchyModel } from "@/models/Hierarchy";
+import mongoose from "mongoose";
 
 // Extracts a Google Drive file ID from common share URL formats
 function extractDriveId(url: string): string | null {
@@ -28,6 +30,7 @@ export async function POST(request: NextRequest) {
     const password = (formData.get("password") as string) || "";
     const tagsInput = (formData.get("tags") as string) || "";
     const storeMethod = (formData.get("storeMethod") as string) || "PDF";
+    const hierarchyNodeId = (formData.get("hierarchyNodeId") as string) || "";
 
     const primaryTagsInput = (formData.get("primaryTags") as string) || "";
     const propertyTagsInput = (formData.get("propertyTags") as string) || "";
@@ -39,6 +42,24 @@ export async function POST(request: NextRequest) {
         { error: "UID and Document Name are required." },
         { status: 400 }
       );
+    }
+
+    // Validate hierarchy node if provided
+    let hierarchyNode = null;
+    if (hierarchyNodeId && hierarchyNodeId.trim()) {
+      if (!mongoose.Types.ObjectId.isValid(hierarchyNodeId.trim())) {
+        return NextResponse.json(
+          { error: "Invalid hierarchy node ID." },
+          { status: 400 }
+        );
+      }
+      hierarchyNode = await HierarchyModel.findById(hierarchyNodeId.trim());
+      if (!hierarchyNode) {
+        return NextResponse.json(
+          { error: "The selected folder does not exist." },
+          { status: 404 }
+        );
+      }
     }
 
     // Process Tags: e.g. "#physics #CUFE" -> ["physics", "cufe"]
@@ -104,6 +125,8 @@ export async function POST(request: NextRequest) {
         // Silently fall back to 0 if size cannot be determined
       }
 
+      const casteIds = hierarchyNode ? [hierarchyNode._id] : [];
+
       const newDoc = new DocumentModel({
         uid,
         name,
@@ -118,13 +141,23 @@ export async function POST(request: NextRequest) {
         fileSize: driveFileSize,
         mimeType: "application/pdf",
         storeMethod: "DRIVE",
+        caste: casteIds,
       });
 
       await newDoc.save();
 
+      // Link document into hierarchy node
+      if (hierarchyNode) {
+        await HierarchyModel.findByIdAndUpdate(hierarchyNode._id, {
+          $push: { files: newDoc._id },
+        });
+      }
+
       return NextResponse.json(
         {
-          message: "Drive document registered successfully.",
+          message: hierarchyNode
+            ? `Drive document registered successfully and added to folder "${hierarchyNode.Name}".`
+            : "Drive document registered successfully.",
           documentId: newDoc._id.toString(),
         },
         { status: 201 }
@@ -159,6 +192,9 @@ export async function POST(request: NextRequest) {
     await writeFile(fileLocation, buffer);
 
     const relativePath = path.join("docus", safeFileName);
+
+    const casteIds = hierarchyNode ? [hierarchyNode._id] : [];
+
     const newDoc = new DocumentModel({
       uid,
       name,
@@ -173,13 +209,23 @@ export async function POST(request: NextRequest) {
       fileSize: documentFile.size,
       mimeType: documentFile.type || "application/octet-stream",
       storeMethod: "PDF",
+      caste: casteIds,
     });
 
     await newDoc.save();
 
+    // Link document into hierarchy node
+    if (hierarchyNode) {
+      await HierarchyModel.findByIdAndUpdate(hierarchyNode._id, {
+        $push: { files: newDoc._id },
+      });
+    }
+
     return NextResponse.json(
       {
-        message: "Document uploaded and registered successfully.",
+        message: hierarchyNode
+          ? `Document uploaded and added to folder "${hierarchyNode.Name}".`
+          : "Document uploaded and registered successfully.",
         documentId: newDoc._id.toString(),
       },
       { status: 201 }

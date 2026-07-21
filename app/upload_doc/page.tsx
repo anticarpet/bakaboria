@@ -29,6 +29,124 @@ function validateDriveUrl(url: string): string {
   return ""; // valid
 }
 
+interface HierarchyNodeRef {
+  id: string;
+  Name: string;
+}
+
+// ── Shared folder-browser component ──────────────────────────────────────────
+function FolderBrowser({
+  folderPath,
+  folderChildren,
+  currentFolderNodeId,
+  onChildClick,
+  onPathClick,
+  onBack,
+}: {
+  folderPath: HierarchyNodeRef[];
+  folderChildren: HierarchyNodeRef[];
+  currentFolderNodeId: string | null;
+  onChildClick: (child: HierarchyNodeRef) => void;
+  onPathClick: (index: number) => void;
+  onBack: () => void;
+}) {
+  const folderPathDisplay =
+    folderPath.length > 0
+      ? `:${folderPath.map((node) => `/${node.Name}`).join("")}`
+      : ":/";
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <label className="block text-sm font-semibold text-black">
+          Select Folder
+        </label>
+        {folderPath.length > 0 && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-black border border-black/20 hover:border-black rounded-lg px-2.5 py-1 transition-all"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
+        )}
+      </div>
+
+      {/* Breadcrumb */}
+      <div className="rounded-lg border border-slate-800 bg-white px-4 py-2.5 text-sm text-black font-mono break-all min-h-[42px] flex items-center">
+        {folderPath.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => onPathClick(-1)}
+            className="hover:underline text-left"
+          >
+            {folderPathDisplay}
+          </button>
+        ) : (
+          <span className="flex flex-wrap items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => onPathClick(-1)}
+              className="hover:underline shrink-0"
+            >
+              :
+            </button>
+            {folderPath.map((node, index) => (
+              <span key={node.id} className="flex items-center shrink-0">
+                <span>/</span>
+                <button
+                  type="button"
+                  onClick={() => onPathClick(index)}
+                  className="hover:underline"
+                >
+                  {node.Name}
+                </button>
+              </span>
+            ))}
+          </span>
+        )}
+      </div>
+
+      {/* Children */}
+      {folderChildren.length > 0 && (
+        <div className="space-y-2">
+          {folderChildren.map((child) => (
+            <button
+              key={child.id}
+              type="button"
+              onClick={() => onChildClick(child)}
+              className="w-full text-left text-sm font-medium text-black border border-black/20 hover:border-black hover:bg-slate-50 rounded-lg px-4 py-2.5 transition-all"
+            >
+              → {child.Name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {folderChildren.length === 0 && currentFolderNodeId && (
+        <p className="text-xs text-slate-500">No sub-folders in this location.</p>
+      )}
+
+      {/* Selected folder display */}
+      {currentFolderNodeId ? (
+        <div className="flex items-center gap-2 mt-1">
+          <svg className="h-3.5 w-3.5 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          <p className="text-xs text-emerald-700 font-semibold">
+            Will be placed in: {folderPath[folderPath.length - 1]?.Name}
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-400 italic">No folder selected — document won&apos;t be linked to any folder.</p>
+      )}
+    </div>
+  );
+}
+
 
 
 export default function UploadDocPage() {
@@ -51,6 +169,11 @@ export default function UploadDocPage() {
   // Drive-specific
   const [driveUrl, setDriveUrl] = useState("");
   const [driveUrlError, setDriveUrlError] = useState("");
+
+  // ── Folder selection state ────────────────────────────────────────────────
+  const [folderPath, setFolderPath] = useState<HierarchyNodeRef[]>([]);
+  const [folderChildren, setFolderChildren] = useState<HierarchyNodeRef[]>([]);
+  const [currentFolderNodeId, setCurrentFolderNodeId] = useState<string | null>(null);
 
   // Advanced options
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -114,6 +237,50 @@ export default function UploadDocPage() {
     else setDriveUrlError("");
   }, [driveUrl]);
 
+  // ── Load initial folder tree ──────────────────────────────────────────────
+  useEffect(() => {
+    fetch("/api/hierarchy")
+      .then((r) => r.json())
+      .then((data) => setFolderChildren(data.children || []))
+      .catch(() => {});
+  }, []);
+
+  // ── Folder navigation helpers ─────────────────────────────────────────────
+  const loadFolderNode = async (nodeId: string | null) => {
+    const url = nodeId ? `/api/hierarchy?nodeId=${nodeId}` : "/api/hierarchy";
+    const res = await fetch(url);
+    if (!res.ok) { setFolderChildren([]); return; }
+    const data = await res.json();
+    setFolderChildren(data.children || []);
+  };
+
+  const handleFolderChildClick = async (child: HierarchyNodeRef) => {
+    const newPath = [...folderPath, child];
+    setFolderPath(newPath);
+    setCurrentFolderNodeId(child.id);
+    await loadFolderNode(child.id);
+  };
+
+  const handleFolderPathClick = async (index: number) => {
+    if (index < 0) {
+      setFolderPath([]);
+      setCurrentFolderNodeId(null);
+      await loadFolderNode(null);
+      return;
+    }
+    const newPath = folderPath.slice(0, index + 1);
+    const node = newPath[newPath.length - 1];
+    setFolderPath(newPath);
+    setCurrentFolderNodeId(node.id);
+    await loadFolderNode(node.id);
+  };
+
+  const handleFolderBack = () => {
+    if (folderPath.length === 0) return;
+    handleFolderPathClick(folderPath.length - 2);
+  };
+
+  // ── File drag + drop ──────────────────────────────────────────────────────
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -147,6 +314,10 @@ export default function UploadDocPage() {
     setHidden(false);
     setHiddenTagsInput("");
     setShowAdvanced(false);
+    // Reset folder selection
+    setFolderPath([]);
+    setCurrentFolderNodeId(null);
+    loadFolderNode(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -185,6 +356,11 @@ export default function UploadDocPage() {
       formData.append("password", password);
       formData.append("tags", tagsInput);
       formData.append("storeMethod", uploadMode);
+
+      // Pass the selected hierarchy node id (if any)
+      if (currentFolderNodeId) {
+        formData.append("hierarchyNodeId", currentFolderNodeId);
+      }
 
       if (showAdvanced) {
         formData.append("primaryTags", primaryTagsInput);
@@ -228,11 +404,6 @@ export default function UploadDocPage() {
 
 
 
-
-
-
-
-
   // Loading state while session is being fetched
   if (sessionStatus === "loading") {
     return (
@@ -249,21 +420,6 @@ export default function UploadDocPage() {
     <div className="relative min-h-screen bg-white text-slate-900 flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8 font-sans overflow-hidden">
 
       {/* ── Logo watermark ── */}
-      {/* PC: wide crop, left-anchored */}
-      {/* <div
-        className="pointer-events-none select-none fixed bottom-0 left-0 hidden sm:block"
-        style={{ opacity: 0.065, zIndex: 0 }}
-        aria-hidden="true"
-      >
-        <Image
-          src="/logo.png"
-          alt=""
-          width={1360}
-          height={1120}
-          style={{ objectFit: "contain", objectPosition: "left bottom" }}
-          priority
-        />
-      </div> */}
       {/* Mobile: smaller, bottom-left */}
       <div
         className="pointer-events-none select-none fixed bottom-0 left-0 block sm:hidden"
@@ -418,6 +574,24 @@ export default function UploadDocPage() {
               )}
             </div>
 
+            {/* ── Folder Selection ── */}
+            <div >
+              <div className="mb-3">
+                <span className="text-sm font-bold text-black">Folder</span>
+                <span className="ml-2 text-xs text-slate-500 font-normal">
+                  Choose where to place this document
+                </span>
+              </div>
+              <FolderBrowser
+                folderPath={folderPath}
+                folderChildren={folderChildren}
+                currentFolderNodeId={currentFolderNodeId}
+                onChildClick={handleFolderChildClick}
+                onPathClick={handleFolderPathClick}
+                onBack={handleFolderBack}
+              />
+            </div>
+
             {/* Advanced Options Toggle */}
             <div className="flex items-center justify-between border-t border-black/15 pt-5">
               <div className="flex flex-col">
@@ -441,60 +615,6 @@ export default function UploadDocPage() {
 
             {showAdvanced && (
               <div >
-                {/* Primary Tags
-                <div>
-                  <label htmlFor="primaryTags" className="block text-sm font-semibold text-black">
-                    Primary Tags <span className="text-xs text-slate-500 font-normal">(Separated by hashtags)</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="primaryTags"
-                    placeholder="e.g. #physics #math"
-                    value={primaryTagsInput}
-                    onChange={(e) => setPrimaryTagsInput(e.target.value)}
-                    className="mt-1.5 block w-full rounded-lg bg-white border border-slate-800 px-4 py-2.5 text-black placeholder-slate-500 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
-                  />
-                  {parsedPrimaryTags.length > 0 && (
-                    <div className="mt-2.5 flex flex-wrap gap-2">
-                      {parsedPrimaryTags.map((tag, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-black border border-black/20"
-                        >
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div> */}
-
-                {/* Property Tags
-                <div>
-                  <label htmlFor="propertyTags" className="block text-sm font-semibold text-black">
-                    Property Tags <span className="text-xs text-slate-500 font-normal">(Separated by hashtags)</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="propertyTags"
-                    placeholder="e.g. #final #midterm"
-                    value={propertyTagsInput}
-                    onChange={(e) => setPropertyTagsInput(e.target.value)}
-                    className="mt-1.5 block w-full rounded-lg bg-white border border-slate-800 px-4 py-2.5 text-black placeholder-slate-500 focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 transition-all text-sm"
-                  />
-                  {parsedPropertyTags.length > 0 && (
-                    <div className="mt-2.5 flex flex-wrap gap-2">
-                      {parsedPropertyTags.map((tag, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-black border border-black/20"
-                        >
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div> */}
-
                 {/* Hidden Switch */}
                 <div className="flex items-center justify-between border-t border-black/10 pt-4">
                   <div className="flex flex-col">
@@ -659,7 +779,7 @@ export default function UploadDocPage() {
                   Google Drive Share URL
                 </label>
                 <p className="text-xs text-slate-500 mt-0.5 mb-1.5">
-                  Share your PDF in Drive → "Anyone with the link can view" → paste the link here.
+                  Share your PDF in Drive → &quot;Anyone with the link can view&quot; → paste the link here.
                 </p>
                 <div className="relative">
                   <input
