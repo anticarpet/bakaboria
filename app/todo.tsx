@@ -21,6 +21,12 @@ const todo =
 
 - get rid of the bloat that is the adv. options
 
-- add support for summaries, boards, slides and videos`;
+- add support for summaries, boards, slides and videos
+
+BUT HERES WHAT TO DO **NOW**
+
+- add hierarchy templates so everything's uniform, so for example each subject in CUFE is subj:(exams / sheets / slides) and etc... ( ofc its adjustable )
+
+- add a demolish command to delete a node, all its children and their PDFs ( if -f is not present then children to another parent are not destroyed )`;
 
 export default todo;
