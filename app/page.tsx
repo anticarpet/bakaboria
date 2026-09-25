@@ -126,14 +126,20 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Bottom Row: terminal (if admin signed in) */}
+          {/* Bottom Row: admin-only links (terminal + tasks) */}
           {isAdmin && (
-            <div className="w-full">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full">
               <Link
                 href="/terminal"
-                className="block w-full border-4 border-black rounded-xl bg-white text-black font-extrabold p-4 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg"
+                className="border-4 border-black rounded-xl bg-white text-black font-extrabold p-4 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg"
               >
                 terminal
+              </Link>
+              <Link
+                href="/tasks"
+                className="border-4 border-black rounded-xl bg-white text-black font-extrabold p-4 text-center hover:bg-black hover:text-white transition-all duration-200 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[6px] hover:translate-y-[6px] active:scale-[0.97] text-base sm:text-lg"
+              >
+                tasks
               </Link>
             </div>
           )}
